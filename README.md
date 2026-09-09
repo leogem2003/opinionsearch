@@ -9,8 +9,10 @@ TODO: screeshots
 # Setup
 
 ## Dependincies
-- python3 with uv
-- postgresql with `postgis` and `pgvector` extensions
+- `python3` with Astral `uv`
+- `gdal`, `geos` and `proj` system libraries
+- `postgresql` with `postgis` and `pgvector` extensions
+See [flake.nix](flake.nix) for initial postgresql setup.
   
 # Running
 (Dev server)

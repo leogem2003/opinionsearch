@@ -144,6 +144,9 @@ rabbitmq-data/
 # ActiveMQ
 activemq-data/
 
+# PostgreSQL
+.pgdata
+
 # SageMath parsed files
 *.sage.py
 
