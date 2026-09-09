@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "django>=5.0,<6.0",
+    "flagembedding",
     "python-dotenv>=1.0.1",
 ]
 
@@ -16,4 +17,7 @@ dev = [
     "django-debug-toolbar>=4.3.0",
     "black>=24.0.0",
 ]
+
+[tool.uv.sources]
+flagembedding = { git = "https://github.com/FlagOpen/FlagEmbedding.git" }
 
