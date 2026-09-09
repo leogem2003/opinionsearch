@@ -16,3 +16,4 @@ Database:
    3. Discover/group opposite opinions
    4. Add comments/collaborate/discuss foreach oppinion/clustering
    
+Q: Censor/flag hatespeech and/or add terms of use (e.g. "user responsible for content they publish")
