@@ -2,13 +2,14 @@
 
 ## Backend
 ### Databases
-- Relational DB (use Django default)
+Postgre with pgvector for vector DB, postGIS for geo data.
+- Relational DB:
     - Tables
-        - User: username, uuid
-        - Opinion: text, topic, User.uuid, VectorID
+        - User: username, uuid.
+        - Opinion: text, topic, User.uuid, VectorID, timestamp, geo_coordinates.
         - Argument: text, Opinion.pk
-- Vector DB:
-    - Opinions embeddings (VectorID) + timestamp + geo_coordinates
+- pgvector extension:
+    - Opinions embeddings (VectorID) 
     - Clusters
 
 ### Inference
@@ -26,7 +27,7 @@ The vector ID is added to the opinion row.
 
 ### Searching for opinions
 An user inputs some keywords and optionally filters on time and location.
-The embedding parses the keywords.
-The vector DB applies filters and searches the closest clusters.
-The vector DB applies UMAP projection in a 2D space, returns vectorID, timestamp, geo_coordinates, projection coordinates, cluster_id.
-The relational DB joins the vector IDs with the opinions, returns text, timestamp, geo_coordinates, projection coordinates, cluster_id.
+The embedder parses the keywords.
+The vector extension matches the resulting embedding to the closest clusters (top K closest).
+The vector extension applies UMAP projection in a 2D space, returns vectorID and projection coordinates.
+The relational DB joins the vector IDs with the opinions, applies filters, and returns text, timestamp, geo_coordinates, projection coordinates, cluster_id.
