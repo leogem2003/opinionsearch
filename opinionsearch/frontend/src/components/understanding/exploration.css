@@ -1,0 +1,123 @@
+/* The topic index, discussion and contribution pages share one civic shell. */
+.exploration-shell { --civic-canvas: #f4f7f9; background: var(--civic-canvas); }
+.exploration-main { flex: 1; min-width: 0; }
+.exploration-container { width: min(100% - 64px, 1240px); margin-inline: auto; }
+.page-breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-height: 60px; padding-block: 8px; color: #536c7b; font-size: .875rem; }
+.page-breadcrumb a { display: inline-flex; align-items: center; min-height: 44px; color: #086b7b; text-decoration: none; }
+.page-breadcrumb a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.page-breadcrumb [aria-current] { overflow-wrap: anywhere; }
+.topic-page { padding-bottom: 48px; }
+.topic-heading { padding-block: 4px 26px; }
+.topic-dataset { color: #526e7c; font-size: .875rem; }
+.topic-dataset::before { content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #b68639; margin: 0 8px 2px 0; }
+.topic-heading h1 { margin-top: 8px; font: 400 clamp(2.25rem, 4vw, 3.25rem)/1.1 Georgia, serif; letter-spacing: -.035em; color: #17394b; overflow-wrap: anywhere; }
+
+/* The distribution comes first. Selecting a position reveals a bounded list of sources. */
+.opinion-atlas { min-width: 0; }
+.atlas-chart-panel { min-width: 0; padding: 26px 30px 22px; border-radius: 10px; background: radial-gradient(ellipse at 0 0, #23515480, transparent 80%), #12353a; color: #edf5ef; scroll-margin-top: 16px; }
+.atlas-chart-panel :focus-visible, .atlas-chart-panel:focus-visible { outline: 3px solid #f0d99a; outline-offset: 3px; }
+.atlas-chart-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.atlas-chart-heading h2 { font-size: 1.25rem; font-weight: 550; }
+.atlas-chart-heading p { margin-top: 8px; color: #bfd2ce; font-size: .875rem; line-height: 1.5; }
+.civic-page .atlas-reset { border: 1px solid #78938c; border-radius: 4px; min-height: 44px; padding: 8px 10px; background: transparent; color: #e4eddb; font-size: .875rem; }
+.atlas-reset:hover { background: #2b514b; }
+.atlas-groups { list-style: none; display: grid; gap: 8px; padding: 0; }
+.atlas-groups > li { min-width: 0; }
+.atlas-group { display: block; min-width: 0; width: 100%; padding: 14px 16px; border: 0; border-left: 2px solid transparent; border-radius: 4px; background: transparent; text-align: left; color: #edf5ef; }
+.atlas-group:hover:not(:disabled) { background: #2a504d; }
+.atlas-group.is-current { border-left-color: var(--group-color); background: #274c49; }
+.atlas-group:disabled { opacity: .55; cursor: default; }
+.atlas-group-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; color: var(--group-color); }
+.atlas-group-name { font-size: 1.0625rem; font-weight: 500; }
+.atlas-group-count { flex-shrink: 0; font-size: 1.375rem; font-variant-numeric: tabular-nums; }
+.atlas-group-count small { font-size: .8125rem; color: #ceded7; }
+.atlas-bar-track { display: block; height: 6px; margin-top: 12px; background: #ffffff12; border-radius: 2px; overflow: hidden; }
+.atlas-bar-track > span { display: block; height: 100%; background: var(--group-color); border-radius: 2px; }
+.atlas-other-positions { grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid #54736e; margin-top: 12px; padding-top: 12px; }
+.atlas-other-positions .atlas-group-name { font-size: .9375rem; }
+.atlas-other-positions .atlas-group-count { font-size: 1.0625rem; }
+.atlas-chart-note { margin-top: 18px; color: #becfc9; font-size: .8125rem; line-height: 1.6; }
+.atlas-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; min-height: 220px; color: #d2e1d8; font-size: 1rem; line-height: 1.6; text-align: center; }
+.atlas-empty button { min-height: 44px; padding: 10px 18px; border: 1px solid #a0b8a7; border-radius: 4px; background: transparent; color: #ebf0db; }
+.atlas-loading-orbit { width: 30px; height: 30px; border: 2px solid #759889; border-top-color: #efd79e; border-radius: 50%; animation: atlas-orbit 1s linear infinite; }
+.opinion-detail { margin-top: 28px; scroll-margin-top: 20px; }
+.opinion-detail-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; padding-bottom: 16px; border-bottom: 1px solid #c9d9de; }
+.opinion-detail-heading h2 { color: #234655; font: 400 1.625rem/1.3 Georgia, serif; }
+.opinion-detail-heading p { margin-top: 6px; color: #526d7b; font-size: .875rem; }
+.opinion-reason-row { border-bottom: 1px solid #c9d9de; scroll-margin-top: 20px; }
+.opinion-reason-row > summary { display: flex; align-items: center; justify-content: space-between; gap: 20px; list-style: none; padding-block: 22px; min-height: 64px; cursor: pointer; color: #244c58; font-size: 1.0625rem; line-height: 1.65; }
+.opinion-reason-row > summary::-webkit-details-marker { display: none; }
+.opinion-reason-row > summary > span:first-child { overflow-wrap: anywhere; }
+.opinion-reason-row > summary > span:last-child { flex-shrink: 0; color: #086b7b; font-size: 1.5rem; }
+.opinion-row-label { display: block; margin-bottom: 4px; color: #526d7b; font-size: .8125rem; }
+.opinion-reason-body { max-width: 78ch; padding-bottom: 18px; }
+.opinion-connection { color: #526d7b; font-size: .9375rem; line-height: 1.6; margin-bottom: 12px; }
+.opinion-reason-body blockquote { margin: 10px 0; padding-left: 16px; border-left: 2px solid #86a6b0; color: #395b65; font-size: 1rem; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.opinion-message { padding-block: 24px; color: #526d7b; line-height: 1.6; }
+.atlas-source-link { display: inline-flex; align-items: center; gap: 12px; align-self: flex-start; min-height: 44px; color: #086b7b; text-decoration: none; font-size: .9375rem; }
+.atlas-source-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+.opinion-pages { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; margin-top: 14px; padding-top: 12px; color: #526d7b; font-size: .875rem; }
+.opinion-back { margin-top: 12px; }
+.atlas-method { border-top: 1px solid #c9d7dc; margin-top: 24px; color: #4f6978; font-size: .875rem; }
+.atlas-method summary { cursor: pointer; min-height: 48px; padding-block: 14px; }
+.atlas-method details > div { padding: 2px 0 20px; max-width: 78ch; line-height: 1.7; }
+.atlas-method details p + p { margin-top: 10px; }
+
+/* The discussion reading view shows all contributions. */
+.topic-reading { padding: 28px 32px; background: #fff; border: 1px solid #cedbe0; border-radius: 10px; }
+.topic-reading-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-bottom: 20px; border-bottom: 1px solid #d0dde2; }
+.topic-reading-heading h2 { font: 400 1.7rem/1.3 Georgia, serif; color: #234655; }
+.exploration-voice { display: grid; grid-template-columns: minmax(0, 1fr) 165px; align-items: center; gap: 28px; padding-block: 26px; border-bottom: 1px solid #d0dde2; }
+.exploration-voice-body { min-width: 0; }
+.exploration-voice h3 { margin-top: 12px; max-width: 70ch; color: #254955; font-size: 1.0625rem; font-weight: 500; line-height: 1.65; overflow-wrap: anywhere; }
+.exploration-voice-link { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: 44px; color: #086b7b; text-decoration: none; font-size: .9375rem; }
+.exploration-voice-link:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+/* The contribution page displays the original words and their receipt. */
+.exploration-night { color: #17394b; }
+.exploration-intro { padding-block: 4px 16px; }
+.contribution-intro h1 { margin-top: 12px; font: 400 clamp(2rem, 4vw, 3rem)/1.15 Georgia, serif; letter-spacing: -.035em; overflow-wrap: anywhere; }
+.contribution-intro .understanding-meta { color: #526d7b; font-size: .875rem; }
+.contribution-intro .understanding-badge { font-size: .8125rem; }
+.contribution-reading { max-width: 1040px; padding-block: 22px 64px; }
+.contribution-reading .understanding-source { padding: 24px 28px; border: 1px solid #cbdbe1; border-top: 3px solid #127987; border-radius: 8px; background: #fff; scroll-margin-top: 20px; }
+.contribution-reading .understanding-source h2 { color: #536e7c; font-size: .875rem; font-weight: 500; }
+.contribution-reading .understanding-source blockquote { margin-top: 20px; max-width: 65ch; font: 400 clamp(1.25rem, 2.4vw, 1.7rem)/1.6 Georgia, serif; color: #244c58; }
+.contribution-reading h2 { font-size: 1.125rem; font-weight: 550; color: #254a59; }
+.contribution-reading .understanding-note { font-size: .9375rem; }
+.contribution-return { margin-top: 24px; }
+.exploration-unavailable { padding: 64px 24px; text-align: center; }
+.exploration-unavailable h1 { font: 400 2.25rem/1.3 Georgia, serif; }
+.exploration-unavailable p { max-width: 60ch; margin: 20px auto; color: #526d7b; font-size: 1rem; line-height: 1.7; }
+.atlas-inline-button { display: inline-flex; align-items: center; min-height: 44px; padding: 8px; color: #086b7b; text-underline-offset: 4px; }
+
+@keyframes atlas-orbit { to { transform: rotate(360deg); } }
+@media (max-width: 1100px) {
+  .exploration-container { width: calc(100% - 48px); }
+  .atlas-chart-panel { padding: 24px; }
+}
+@media (max-width: 800px) {
+  .topic-reading-heading { align-items: flex-start; flex-direction: column; }
+  .exploration-voice { grid-template-columns: 1fr; gap: 8px; }
+  .exploration-voice-link { justify-self: start; }
+  .atlas-other-positions { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .exploration-container { width: calc(100% - 32px); }
+  .topic-heading { padding-bottom: 16px; }
+  .topic-heading h1 { font-size: 2.5rem; }
+  .atlas-chart-panel { padding: 22px 16px 20px; }
+  .atlas-chart-heading { gap: 8px; }
+  .atlas-chart-heading h2 { font-size: 1.125rem; }
+  .atlas-chart-heading > div { min-width: 0; }
+  .atlas-group { padding-inline: 8px; }
+  .atlas-group-name { font-size: 1rem; }
+  .opinion-detail-heading h2 { font-size: 1.5rem; }
+  .topic-reading { padding: 22px 18px; }
+  .topic-reading-heading h2 { font-size: 1.5rem; }
+  .contribution-reading { padding-top: 14px; }
+  .contribution-reading .understanding-source { padding: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .exploration-shell *, .exploration-shell *::before, .exploration-shell *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}

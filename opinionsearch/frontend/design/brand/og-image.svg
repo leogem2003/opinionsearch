@@ -1,0 +1,22 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="HiveMind — A space for public dialogue">
+  <rect width="1200" height="630" fill="#f6f7f3"/>
+  <path d="M0 5h1200" stroke="#17394b" stroke-width="10"/>
+  <image href="../../public/brand/hivemind-symbol-128.png" x="68" y="53" width="102" height="102" style="mix-blend-mode:multiply"/>
+  <text x="179" y="110" fill="#17394b" font-family="Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="-1.4">HiveMind</text>
+  <text x="180" y="137" fill="#586b76" font-family="Arial, sans-serif" font-size="13" letter-spacing="2.3">PUBLIC DIALOGUE</text>
+  <path d="M80 235h38" stroke="#92713f" stroke-width="3"/>
+  <text x="80" y="325" fill="#17394b" font-family="Georgia, serif" font-size="70" letter-spacing="-2">A space for</text>
+  <text x="80" y="404" fill="#17394b" font-family="Georgia, serif" font-size="70" letter-spacing="-2">public dialogue.</text>
+  <text x="83" y="475" fill="#586b76" font-family="Arial, sans-serif" font-size="25">Share an issue. Explore different perspectives.</text>
+  <g transform="translate(790 215)" stroke="#c5d1d0" stroke-width="1.5">
+    <path d="m165 24 64 37v74l-64 37-64-37V61l64-37Z"/>
+    <path d="m101 61-64 37v74l64 37 64-37M229 61l64 37v74l-64 37-64-37"/>
+    <path d="m165 98 64 37M165 98l-64 37M165 24v74M37 98l64 37M293 98l-64 37M165 98v74"/>
+    <circle cx="165" cy="98" r="22" fill="#f6f7f3"/>
+    <circle cx="165" cy="98" r="5" fill="#17394b" stroke="none"/>
+    <circle cx="165" cy="24" r="5" fill="#9d7b4b" stroke="none"/>
+    <circle cx="37" cy="172" r="4" fill="#9d7b4b" stroke="none"/>
+    <circle cx="293" cy="98" r="4" fill="#17394b" stroke="none"/>
+  </g>
+  <path d="M80 552h1040" stroke="#d6dedd"/>
+</svg>

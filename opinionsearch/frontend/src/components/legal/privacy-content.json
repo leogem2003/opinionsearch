@@ -1,0 +1,29 @@
+{
+  "title": "Privacy in this prototype",
+  "intro": "This page describes the current prototype. A privacy policy for a public service has not yet been established.",
+  "sections": [
+    {
+      "id": "example-data",
+      "heading": "Example discussions",
+      "paragraphs": [
+        "Discussions marked as examples use illustrative contributions included with the website. Text entered through the issue form is kept separate from these examples."
+      ]
+    },
+    {
+      "id": "issue-input",
+      "heading": "Your issue input",
+      "paragraphs": [
+        "In the development demo, the form is labelled “Demo”. Your text and its access receipt are saved in this browser tab’s session storage. The demo does not send your contribution to a server or provide lasting storage.",
+        "Outside demo mode, the form sends your text to the configured contribution service. That service is pending implementation in this prototype. The form only confirms a save after receiving a valid receipt."
+      ]
+    },
+    {
+      "id": "access-receipt",
+      "heading": "Your access receipt",
+      "paragraphs": [
+        "The website keeps an access receipt in this browser tab’s session storage, with browser history state as a fallback. It uses the receipt to reopen your saved text without an account. The receipt is not included in the page address.",
+        "Losing the receipt can prevent access to your contribution. Account recovery and contribution editing or deletion are not available in the current interface."
+      ]
+    }
+  ]
+}
