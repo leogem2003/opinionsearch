@@ -25,4 +25,21 @@
         };
       });
     };
+  
+  
+  /* # add to configuration.nix
+  services.postgresql = {
+    enable = true;
+    ensureDatabases = [ "opiniondb" ];
+    extraPlugins = ps: with ps; [ 
+      postgis 
+      pgvector 
+    ];
+    
+    authentication = pkgs.lib.mkOverride 10 ''
+      #type database  DBuser  auth-method
+      local all       all     trust
+    '';
+  }; 
+  */
 }
