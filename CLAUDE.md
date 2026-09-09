@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Early stage. The database layer is built: PostgreSQL with PostGIS and pgvector is wired up, the models from `design.md` exist in the `opinions` app, and migrations are applied. There are no views, URLs, templates, or tests yet, and no embedding or clustering code — `design.md` is still the specification being built toward, so read it before adding features and keep it in sync when the design changes.
+Early stage. The database layer is built: PostgreSQL with PostGIS and pgvector is wired up, the models from `design.md` exist in the `opinions` app, and migrations are applied. Publishing an opinion now generates its embedding (`opinions/embedding.py`, BGE-M3 via FlagEmbedding). There are no views, URLs, or templates yet, no tests, and no clustering/search code — `design.md` is still the specification being built toward, so read it before adding features and keep it in sync when the design changes.
 
 ## Commands
 
@@ -43,7 +43,7 @@ Everything lives in **one PostgreSQL database**, extended rather than split: `pg
 
 All of this lives in the `opinions` app (`opinions/models.py`):
 
-- `User` — swappable auth model (`AUTH_USER_MODEL = "opinions.User"`), extending `AbstractUser` for `username` and auth plumbing, plus a `uuid` public identifier. Deliberately thin: the geo and time attributes belong to the opinion, not the author.
+- `User` — a plain model, per `design.md`: just `username` (unique) and a `uuid` public identifier, no password/email/permissions. It is **not** `AUTH_USER_MODEL` — logging into `/admin` goes through Django's separate, default `django.contrib.auth.models.User`. The two are unrelated; don't conflate "an app user who publishes opinions" with "someone who can log into the admin site."
 - `Opinion` — `text`, `topic`, `timestamp` (`auto_now_add`), a nullable PostGIS `geo_coordinates` point, an FK to `User` **by `uuid`** (`to_field="uuid"`, column `user_uuid`) rather than by primary key, and a nullable one-to-one `vector` to `OpinionEmbedding` (column `vector_id`). The vector is null until the embedding has been computed. `timestamp` and `geo_coordinates` are the columns the search filters on, so they sit on the row being filtered.
 - `Argument` — `text` plus an FK to `Opinion`.
 - `OpinionEmbedding` — the pgvector side: `vector_id` UUID primary key (the VectorID of `design.md`), a 1024-dim `embedding` (BGE-M3's dense width, `EMBEDDING_DIM`), and a nullable FK to `Cluster`. Carries an HNSW index using `vector_cosine_ops`, so similarity queries should use cosine distance to actually hit the index.
@@ -51,8 +51,10 @@ All of this lives in the `opinions` app (`opinions/models.py`):
 
 `Opinion.vector` / `OpinionEmbedding.vector_id` is the join key between an opinion's text and its embedding.
 
-- **Write path** (publishing an opinion): embed the opinion text (BGE-M3) → store the embedding → update clusters → write the vector ID back onto the `Opinion` row. An opinion may carry arguments.
-- **Read path** (search): embed the user's keywords → the vector extension matches that embedding to the top-K closest clusters and applies a UMAP projection into 2D, returning `(vectorID, projection_coords)` → the relational side joins on vector ID, **then** applies the time and location filters directly against `Opinion.timestamp` and `Opinion.geo_coordinates`, returning text, timestamp, geo_coordinates, projection coordinates, and cluster_id.
+- **Write path** (publishing an opinion) — **implemented**: `Opinion.save()` (`opinions/models.py`) embeds `self.text` via `opinions/embedding.py`, creates the `OpinionEmbedding` row, and points `self.vector` at it, all before the `Opinion` row itself is written — so a plain `Opinion.objects.create(...)` already does the right thing, no separate call needed. It only runs once, on creation (`vector_id is None`); editing an opinion's text afterward does not re-embed it. Clustering ("update clusters" in design.md) is not implemented — new embeddings are stored with `cluster=None`.
+- **Read path** (search) — **not implemented**: embed the user's keywords → the vector extension matches that embedding to the top-K closest clusters and applies a UMAP projection into 2D, returning `(vectorID, projection_coords)` → the relational side joins on vector ID, **then** applies the time and location filters directly against `Opinion.timestamp` and `Opinion.geo_coordinates`, returning text, timestamp, geo_coordinates, projection coordinates, and cluster_id.
+
+`opinions/embedding.py` wraps `FlagEmbedding.FlagAutoModel.from_finetuned("BAAI/bge-m3", ...)`. `get_embedder()` is `lru_cache`d so the (multi-GB) model loads once per process, lazily on first use — never at import time, so `manage.py check`/migrations/etc. stay fast. `embed_text()` calls `encode_corpus` (no query instruction — opinions are indexed documents, not search queries); the read path above is what will eventually use `encode_queries` and the `query_instruction_for_retrieval` already configured on the same embedder.
 
 Note the filter ordering in the read path: top-K cluster selection happens *before* the time/location filters are applied, so a heavily filtered search can return well under K results. Preserve that order when implementing, and revisit it deliberately if recall becomes a problem rather than silently reordering.
 
@@ -62,11 +64,12 @@ The 2D projection coordinates exist to drive the client-side visualization of th
 
 - `python-dotenv` now loads `.env`, but only the database settings read from it. `SECRET_KEY` is still the hardcoded insecure default and `DEBUG = True`; move both to the environment before any deployment.
 - `django-debug-toolbar` is installed but absent from `INSTALLED_APPS` and `MIDDLEWARE`.
-- No embedding model or clustering/UMAP library is in `pyproject.toml` yet. Both the write path (embed, cluster, write the vector ID back) and the read path (embed the query, top-K clusters, UMAP projection) are unimplemented — the schema is ready for them, the inference is not.
-- The models are not registered in `opinions/admin.py`, so `/admin` currently shows only users and groups.
+- No clustering/UMAP library is in `pyproject.toml` yet, and there's no re-clustering step anywhere. `OpinionEmbedding.cluster` is always `None` right now. The read path (search) is entirely unimplemented — the schema and the embedder are both ready for it.
+- `opinions.User` has no signup/login flow of its own yet (it's not wired to Django auth at all); creating one is just `User.objects.create(username=...)` for now.
 
 ## Gotchas
 
-- **Extensions are created inside the initial migration.** `opinions/migrations/0001_initial.py` runs `CreateExtension("postgis")` and `VectorExtension()` before the tables, so a fresh database — including the throwaway one pytest-django builds — sets itself up in one step. Keep those first in the operations list, and do not split them into an earlier separate migration: the swappable `AUTH_USER_MODEL` dependency resolves to the app's `__first__` migration, so if that is not the migration creating `User`, `admin.0001_initial` is ordered ahead of it and `migrate` fails with `Related model 'opinions.user' cannot be resolved`.
+- **Extensions are created inside the initial migration.** `opinions/migrations/0001_initial.py` runs `CreateExtension("postgis")` and `VectorExtension()` before the tables, so a fresh database — including the throwaway one pytest-django builds — sets itself up in one step. Keep those first in the operations list if you regenerate this migration.
 - Creating those extensions normally requires database superuser rights. The `opinionsearch` role is not a superuser, so a test database created by that role may fail on `CreateExtension` — the main database already has both extensions installed by `postgres`.
-- `AUTH_USER_MODEL` is already swapped, and swapping it is only safe before the first migration. Changing the user model now means recreating the database.
+- `opinions.User` is intentionally not `AUTH_USER_MODEL`. If that ever changes, note it's only safe to swap before the first migration touching it — changing it later means recreating the database (as happened once already in this project's history).
+- **`Opinion.save()` calls into BGE-M3 synchronously**, so the first opinion created in a process pays the model's load time (weights are pulled from the Hugging Face Hub on first use and cached under `~/.cache/huggingface`; no `HF_TOKEN` is configured, so downloads run at the unauthenticated rate limit). There's no background task queue in this project, so every `runserver`/`pytest`/shell process that creates an opinion eats this cost once, in-request. Don't add a `pytest` test that creates an `Opinion` without being ready for a real (slow, network-dependent) model load, unless `opinions.embedding.get_embedder`/`embed_text` is mocked.

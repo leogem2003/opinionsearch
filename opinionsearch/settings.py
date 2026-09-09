@@ -92,7 +92,8 @@ DATABASES = {
     }
 }
 
-AUTH_USER_MODEL = "opinions.User"
+# opinions.User is a plain model (design.md), not swapped in here -- /admin
+# login still goes through the default django.contrib.auth.models.User.
 
 
 # Password validation

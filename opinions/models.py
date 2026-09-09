@@ -10,20 +10,23 @@ import uuid
 # django.contrib.gis.db.models re-exports the standard field types alongside the
 # geo ones, so this single import covers both.
 from django.contrib.gis.db import models
-from django.contrib.auth.models import AbstractUser
 from pgvector.django import HnswIndex, VectorField
+
+from .embedding import embed_text
 
 # Dense embedding width of BGE-M3, the model named in design.md.
 EMBEDDING_DIM = 1024
 
 
-class User(AbstractUser):
-    """Publisher of opinions.
+class User(models.Model):
+    """Publisher of opinions, per design.md: just a username and a uuid.
 
-    ``username`` and the auth plumbing come from AbstractUser; ``uuid`` is the
-    public identifier that Opinion rows reference instead of the primary key.
+    Deliberately not Django's auth user and not AUTH_USER_MODEL -- no
+    password, email, or permissions. Logging into /admin uses the separate,
+    default django.contrib.auth.models.User instead.
     """
 
+    username = models.CharField(max_length=150, unique=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     def __str__(self):
@@ -101,6 +104,21 @@ class Opinion(models.Model):
         related_name="opinion",
         db_column="vector_id",
     )
+
+    def save(self, *args, **kwargs):
+        """Embed on first save (design.md write path).
+
+        The opinion text is fed into BGE-M3, the resulting vector is stored as
+        an OpinionEmbedding, and that row's id becomes this opinion's VectorID
+        -- all before the Opinion row itself is written. Editing an already
+        embedded opinion's text does not currently re-embed it; there's no
+        re-clustering path yet either (clustering isn't implemented).
+        """
+        if self.vector_id is None and self.text:
+            self.vector = OpinionEmbedding.objects.create(
+                embedding=embed_text(self.text)
+            )
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.topic}: {self.text[:50]}"
