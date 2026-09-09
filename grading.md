@@ -7,7 +7,7 @@
 Q: User agreement/TOS
 
 ## TODO
-- [ ] oppinion, 
 - [ ] embedding async
 - [ ] political (instead of) map for location selection
-- [ ] delete embedding on oppinion delete
+- [x] delete embedding on oppinion delete
+- [ ] where to get smartvote data from? => generate statements & arguments using python script

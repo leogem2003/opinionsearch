@@ -22,7 +22,7 @@ class OpinionAdmin(admin.ModelAdmin):
     autocomplete_fields = ("author",)
     # Opinion.save() generates embedding from the text; it isn't something to pick
     # by hand, but it's still worth seeing on the change page.
-    readonly_fields = ("embedding", "text")
+    readonly_fields = ("embedding", "cluster")
     inlines = [ArgumentInline]
 
 
