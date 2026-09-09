@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Early stage. The database layer is built: PostgreSQL with PostGIS and pgvector is wired up, the models from `design.md` exist in the `opinions` app, and migrations are applied. Publishing an opinion now generates its embedding (`opinions/embedding.py`, BGE-M3 via FlagEmbedding). There are no views, URLs, or templates yet, no tests, and no clustering/search code — `design.md` is still the specification being built toward, so read it before adding features and keep it in sync when the design changes.
+Early stage. The database layer is built: PostgreSQL with PostGIS and pgvector is wired up, the models from `design.md` exist in the `opinions` app, and migrations are applied. Publishing an opinion now generates its embedding (`opinions/embedding.py`, BGE-M3 via FlagEmbedding). A first cut of search exists at `/search/` (see Architecture below) — plain Django template, no CSS, no clustering/projection yet. There's a real test suite (`opinions/tests/`) exercising it. `design.md` is still the specification being built toward, so read it before adding features and keep it in sync when the design changes.
 
 ## Commands
 
@@ -30,12 +30,21 @@ sudo -u postgres psql -d opinionsearch -c "CREATE EXTENSION IF NOT EXISTS postgi
 
 GeoDjango needs the native GDAL and GEOS libraries present on the system in addition to the Python packages.
 
-Tests: `pytest` and `pytest-django` are in the dev group, but no pytest configuration exists yet. Before the first test can run, add a `[tool.pytest.ini_options]` section to `pyproject.toml` with `DJANGO_SETTINGS_MODULE = "opinionsearch.settings"` (and typically `python_files = "test_*.py"`). Then:
+Tests: `pytest` and `pytest-django` are in the dev group, configured in `pyproject.toml` (`[tool.pytest.ini_options]`). `addopts = "--reuse-db"` is set there because the `opinionsearch` role can't `CREATE EXTENSION` on a database Django builds from scratch (see Gotchas) — so the test database is created once, by hand, the same way as the main one:
+
+```bash
+sudo -u postgres createdb -O opinionsearch test_opinionsearch
+sudo -u postgres psql -d test_opinionsearch -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+After that, `--reuse-db` keeps reusing it. Pass `--create-db` (or drop and redo the two commands above) when migrations change and the schema needs rebuilding. Then:
 
 ```bash
 uv run pytest                             # all tests
 uv run pytest path/to/test_file.py::test_name   # a single test
 ```
+
+`opinions/tests/` (a package, not a single `tests.py`) has a session-scoped `conftest.py` fixture that loads `opinions/tests/fixtures/sample_opinions.json` — a small set of users/topics/statements — via `opinions.tests.utils.load_opinions_fixture`, once per test run, batching every statement into a single BGE-M3 call. See the `Opinion.save()` gotcha below: this genuinely loads the model and runs real inference, it isn't mocked.
 
 ## Architecture (per design.md)
 
@@ -55,9 +64,9 @@ Opinion now holds both its text and embedding directly; there is no separate Opi
 
 `opinions/embedding.py` wraps `FlagEmbedding.FlagAutoModel.from_finetuned("BAAI/bge-m3", ...)`. `get_embedder()` is `lru_cache`d so the (multi-GB) model loads once per process, lazily on first use — never at import time, so `manage.py check`/migrations/etc. stay fast. `embed_text()` calls `encode_corpus` (no query instruction — opinions are indexed documents, not search queries); the read path above is what will eventually use `encode_queries` and the `query_instruction_for_retrieval` already configured on the same embedder.
 
-Note the filter ordering in the read path: top-K cluster selection happens *before* the time/location filters are applied, so a heavily filtered search can return well under K results. Preserve that order when implementing, and revisit it deliberately if recall becomes a problem rather than silently reordering.
+`opinions/embedding.py` wraps `FlagEmbedding.FlagAutoModel.from_finetuned("BAAI/bge-m3", ...)`. `get_embedder()` is `lru_cache`d so the (multi-GB) model loads once per process, lazily on first use — never at import time, so `manage.py check`/migrations/etc. stay fast. `embed_text()` calls `embed_texts()` for a single string; `embed_texts()` does the real `encode_corpus` call (no query instruction — opinions are indexed documents, not search queries) and is what to use whenever more than one text needs embedding at once (e.g. loading a fixture), since one batched encoder call is much cheaper than one call per text.
 
-The 2D projection coordinates exist to drive the client-side visualization of the opinion space, which is the product's core feature.
+The 2D projection coordinates design.md describes exist to drive the client-side visualization of the opinion space, which is the product's core feature — the current `/search/` page is plain text output, not that visualization.
 
 ## Not yet wired up
 
@@ -69,6 +78,7 @@ The 2D projection coordinates exist to drive the client-side visualization of th
 ## Gotchas
 
 - **Extensions are created inside the initial migration.** `opinions/migrations/0001_initial.py` runs `CreateExtension("postgis")` and `VectorExtension()` before the tables, so a fresh database — including the throwaway one pytest-django builds — sets itself up in one step. Keep those first in the operations list if you regenerate this migration.
-- Creating those extensions normally requires database superuser rights. The `opinionsearch` role is not a superuser, so a test database created by that role may fail on `CreateExtension` — the main database already has both extensions installed by `postgres`.
+- Creating those extensions normally requires database superuser rights. The `opinionsearch` role is not a superuser, so a test database created by that role may fail on `CreateExtension` — the main database already has both extensions installed by `postgres`, and the test database needs the same one-time setup by hand (see Commands' Tests section) since `--reuse-db` is what lets `pytest` skip recreating it every run.
 - `opinions.User` is intentionally not `AUTH_USER_MODEL`. If that ever changes, note it's only safe to swap before the first migration touching it — changing it later means recreating the database (as happened once already in this project's history).
-- **`Opinion.save()` calls into BGE-M3 synchronously**, so the first opinion created in a process pays the model's load time (weights are pulled from the Hugging Face Hub on first use and cached under `~/.cache/huggingface`; no `HF_TOKEN` is configured, so downloads run at the unauthenticated rate limit). There's no background task queue in this project, so every `runserver`/`pytest`/shell process that creates an opinion eats this cost once, in-request. Don't add a `pytest` test that creates an `Opinion` without being ready for a real (slow, network-dependent) model load, unless `opinions.embedding.get_embedder`/`embed_text` is mocked.
+- **`Opinion.save()` calls into BGE-M3 synchronously**, so the first opinion created in a process pays the model's load time (weights are pulled from the Hugging Face Hub on first use and cached under `~/.cache/huggingface`; no `HF_TOKEN` is configured, so downloads run at the unauthenticated rate limit). There's no background task queue in this project, so every `runserver`/`pytest`/shell process that creates an opinion eats this cost once, in-request. `opinions/tests/` deliberately does *not* mock the embedder — it pays this cost once per test session (see the `conftest.py` fixture) because the search tests need real, deterministic embeddings (identical text must embed identically) to assert on. Don't add an unrelated test that creates an `Opinion` without being ready for that same real model load, unless `opinions.embedding.get_embedder`/`embed_text`/`embed_texts` is mocked for it specifically.
+- With `--reuse-db`, the test database's rows persist across separate `pytest` invocations. `opinions/tests/conftest.py` clears out `Opinion` (and re-`get_or_create`s `User`s) before loading the fixture every session specifically so repeated runs don't pile up duplicate opinions.

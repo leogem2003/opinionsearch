@@ -1,0 +1,36 @@
+<title>Search opinions</title>
+
+<h1>Search opinions</h1>
+
+<form method="get">
+    <p>
+        <label for="query">Statement:</label>
+        <input type="text" id="query" name="query" value="{{ query }}" size="60">
+    </p>
+    <p>
+        <label for="max_distance">Max cosine distance ({{ max_distance }}):</label>
+        <input type="range" id="max_distance" name="max_distance"
+               min="0" max="1" step="0.01" value="{{ max_distance }}"
+               oninput="document.getElementById('max_distance_output').textContent = this.value">
+        <output id="max_distance_output">{{ max_distance }}</output>
+    </p>
+    <p>
+        <button type="submit">Search</button>
+    </p>
+</form>
+
+{% if query %}
+    <h2>Results for &ldquo;{{ query }}&rdquo;</h2>
+    {% if results %}
+        <ul>
+            {% for result in results %}
+                <li>
+                    {{ result.text }}
+                    (similarity: {{ result.similarity|floatformat:4 }}, topic: {{ result.topic }})
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No opinions found in that range.</p>
+    {% endif %}
+{% endif %}

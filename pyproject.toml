@@ -23,3 +23,13 @@ dev = [
 [tool.uv.sources]
 flagembedding = { git = "https://github.com/FlagOpen/FlagEmbedding.git" }
 
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "opinionsearch.settings"
+python_files = "test_*.py"
+# The opinionsearch DB role isn't a superuser, so it can't CREATE EXTENSION
+# on a test database Django creates from scratch (see CLAUDE.md gotchas).
+# --reuse-db keeps reusing a test_opinionsearch database that already has
+# postgis/vector installed (set up the same way as the main database) instead
+# of dropping and recreating it every run.
+addopts = "--reuse-db"
+

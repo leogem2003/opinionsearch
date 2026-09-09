@@ -27,19 +27,28 @@ def get_embedder():
     )
 
 
-def embed_text(text: str) -> list[float]:
-    """Embed a single passage of text as a dense vector.
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """Embed a batch of passages in a single encoder call.
 
     Uses ``encode_corpus`` rather than plain ``encode``: opinions are the
     indexed documents in design.md's write path, not search queries, so no
     instruction is prepended. ``query_instruction_for_retrieval`` above is for
     the read path (embedding a user's search keywords), not this one.
+
+    Batching matters whenever more than one opinion needs embedding at once
+    (e.g. loading a fixture of many statements): one ``encode_corpus`` call
+    over the whole list is much cheaper than calling ``embed_text`` in a loop.
     """
     embedder = get_embedder()
     dense_vecs = embedder.encode_corpus(
-        [text],
+        texts,
         return_dense=True,
         return_sparse=False,
         return_colbert_vecs=False,
     )["dense_vecs"]
-    return dense_vecs[0].tolist()
+    return [vec.tolist() for vec in dense_vecs]
+
+
+def embed_text(text: str) -> list[float]:
+    """Embed a single passage of text as a dense vector."""
+    return embed_texts([text])[0]
