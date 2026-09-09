@@ -1,8 +1,8 @@
 """Data model for opinions, their arguments, and their embeddings.
 
 Layout follows design.md: a single PostgreSQL database where pgvector holds the
-embeddings and clusters, PostGIS holds geo data, and ``Opinion.vector`` is the
-join key between an opinion's text and its embedding.
+embeddings and clusters, PostGIS holds geo data. Opinion embeds both the text
+and the vector directly.
 """
 
 import uuid
@@ -43,39 +43,6 @@ class Cluster(models.Model):
         return f"Cluster {self.pk}"
 
 
-class OpinionEmbedding(models.Model):
-    """The pgvector side of an opinion.
-
-    ``vector_id`` is the VectorID of design.md: generated here on insert, then
-    written back onto the Opinion row via the ``Opinion.vector`` relation.
-    """
-
-    vector_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    embedding = VectorField(dimensions=EMBEDDING_DIM)
-    cluster = models.ForeignKey(
-        Cluster,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="embeddings",
-    )
-
-    class Meta:
-        indexes = [
-            # Cosine distance, matching how BGE-M3 embeddings are normally compared.
-            HnswIndex(
-                name="opinion_embedding_hnsw",
-                fields=["embedding"],
-                m=16,
-                ef_construction=64,
-                opclasses=["vector_cosine_ops"],
-            )
-        ]
-
-    def __str__(self):
-        return str(self.vector_id)
-
-
 class Opinion(models.Model):
     """A published opinion. Its text is the source of the embedding.
 
@@ -96,28 +63,37 @@ class Opinion(models.Model):
         related_name="opinions",
     )
     # Null until the embedding has been computed and stored.
-    vector = models.OneToOneField(
-        OpinionEmbedding,
+    embedding = VectorField(dimensions=EMBEDDING_DIM, null=True, blank=True)
+    cluster = models.ForeignKey(
+        Cluster,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
-        related_name="opinion",
-        db_column="vector_id",
+        related_name="opinions",
     )
+
+    class Meta:
+        indexes = [
+            # Cosine distance, matching how BGE-M3 embeddings are normally compared.
+            HnswIndex(
+                name="opinion_embedding_hnsw",
+                fields=["embedding"],
+                m=16,
+                ef_construction=64,
+                opclasses=["vector_cosine_ops"],
+            )
+        ]
 
     def save(self, *args, **kwargs):
         """Embed on first save (design.md write path).
 
-        The opinion text is fed into BGE-M3, the resulting vector is stored as
-        an OpinionEmbedding, and that row's id becomes this opinion's VectorID
-        -- all before the Opinion row itself is written. Editing an already
-        embedded opinion's text does not currently re-embed it; there's no
-        re-clustering path yet either (clustering isn't implemented).
+        The opinion text is fed into BGE-M3, the resulting vector is stored
+        directly on the Opinion row before it's written to the database.
+        Editing an already embedded opinion's text does not currently re-embed
+        it; there's no re-clustering path yet either (clustering isn't implemented).
         """
-        if self.vector_id is None and self.text:
-            self.vector = OpinionEmbedding.objects.create(
-                embedding=embed_text(self.text)
-            )
+        if self.embedding is None and self.text:
+            self.embedding = embed_text(self.text)
         super().save(*args, **kwargs)
 
     def __str__(self):

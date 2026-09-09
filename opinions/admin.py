@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Argument, Cluster, Opinion, OpinionEmbedding, User
+from .models import Argument, Cluster, Opinion, User
 
 
 class ArgumentInline(admin.TabularInline):
@@ -16,13 +16,13 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(Opinion)
 class OpinionAdmin(admin.ModelAdmin):
-    list_display = ("topic", "text", "author", "timestamp", "vector")
-    list_filter = ("topic", "timestamp")
+    list_display = ("topic", "text", "author", "timestamp", "cluster")
+    list_filter = ("topic", "timestamp", "cluster")
     search_fields = ("text", "topic", "author__username")
     autocomplete_fields = ("author",)
-    # Opinion.save() generates this from the text; it isn't something to pick
+    # Opinion.save() generates embedding from the text; it isn't something to pick
     # by hand, but it's still worth seeing on the change page.
-    readonly_fields = ("vector",)
+    readonly_fields = ("embedding", "text")
     inlines = [ArgumentInline]
 
 
@@ -35,9 +35,3 @@ class ArgumentAdmin(admin.ModelAdmin):
 @admin.register(Cluster)
 class ClusterAdmin(admin.ModelAdmin):
     list_display = ("id", "updated_at")
-
-
-@admin.register(OpinionEmbedding)
-class OpinionEmbeddingAdmin(admin.ModelAdmin):
-    list_display = ("vector_id", "cluster")
-    list_filter = ("cluster",)
