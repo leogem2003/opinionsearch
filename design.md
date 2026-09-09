@@ -26,8 +26,8 @@ Clusters are updated.
 The vector ID is added to the opinion row.
 
 ### Searching for opinions
-An user inputs some keywords and optionally filters on time and location.
+An user inputs some keywords, maximum similarity distance [0,1] and optionally filters on time and location.
 The embedder parses the keywords.
-The vector extension matches the resulting embedding to the closest clusters (top K closest).
+Filter for maximum similarity distance to keyword embedding and filters.
 The vector extension applies UMAP projection in a 2D space, returns vectorID and projection coordinates.
-The relational DB joins the vector IDs with the opinions, applies filters, and returns text, timestamp, geo_coordinates, projection coordinates, cluster_id.
+The relational DB joins the vector IDs with the opinions, applies filters, and returns text, timestamp, geo_coordinates, projection coordinates.
