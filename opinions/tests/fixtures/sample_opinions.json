@@ -1,0 +1,22 @@
+{
+  "users": ["alice", "bob", "carol", "dave"],
+  "topics": ["climate policy", "public transit", "housing policy"],
+  "statements": [
+    {"user": "alice", "topic": "climate policy", "text": "We must cut carbon emissions faster through a nationwide carbon tax."},
+    {"user": "bob", "topic": "climate policy", "text": "Nuclear power should be expanded to replace coal plants quickly."},
+    {"user": "carol", "topic": "climate policy", "text": "We must cut carbon emissions faster through a nationwide carbon tax."},
+    {"user": "dave", "topic": "climate policy", "text": "Climate policy should prioritize protecting low-income communities first."},
+    {"user": "alice", "topic": "public transit", "text": "Cities should invest heavily in free public bus and train service."},
+    {"user": "bob", "topic": "public transit", "text": "Congestion pricing in downtown areas would fund better transit systems."},
+    {"user": "carol", "topic": "public transit", "text": "Bike lanes are more cost-effective than new subway lines for most cities."},
+    {"user": "dave", "topic": "public transit", "text": "Rural areas need better transit options, not just big cities."},
+    {"user": "alice", "topic": "housing policy", "text": "Zoning reform is the fastest way to make housing affordable again."},
+    {"user": "bob", "topic": "housing policy", "text": "Rent control protects tenants but discourages new housing construction."},
+    {"user": "carol", "topic": "housing policy", "text": "The government should build more public housing directly."},
+    {"user": "dave", "topic": "housing policy", "text": "Housing subsidies should target first-time homebuyers specifically."},
+    {"user": "alice", "topic": "climate policy", "text": "Carbon capture technology is not ready to replace emission cuts."},
+    {"user": "bob", "topic": "public transit", "text": "High-speed rail between major cities would reduce short-haul flights."},
+    {"user": "carol", "topic": "housing policy", "text": "Short-term rental restrictions would free up housing for long-term residents."},
+    {"user": "dave", "topic": "climate policy", "text": "International climate agreements need real enforcement mechanisms to work."}
+  ]
+}
