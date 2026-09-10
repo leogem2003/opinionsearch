@@ -1,8 +1,7 @@
-- [ ] comments
-- [ ] github
+- [ ] ~~comments~~
+- [x] github
 - [x] license
-- [ ] presentation
-- [ ] demo
+- [x] demo
 
 Q: User agreement/TOS
 
@@ -20,22 +19,28 @@ Q: User agreement/TOS
 - [x] add uv run way to readme
 - [x] dynamic topics explore
 
-- [ ] Add sentiment input value [-1,1] (how much do I agree with statement), multiply by sentiment analysis on statement
-- [ ] Maybe (?) add negations for stop words like "hate"? TODO:
-- [ ] Filter my location, user, time
+- [ ] ~~Add sentiment input value [-1,1] (how much do I agree with statement), multiply by sentiment analysis on statement~~
+- [ ] ~~Maybe (?) add negations for stop words like "hate"? TODO~~
+- [ ] ~~political (instead of) map for location selection~~
+- [x] add user name
+- [x] Make up/fetch locations & time for the oppinions
+- [x] Actually show n clusters if n topics are selected with slider in search view
+- [x] fix dark background for embedding map
 
-- [ ] add user name
-- [ ] Actually show n clusters if n topics are selected with slider in search view
+- [ ] presentation ready?
+- [ ] update legal part in the end, TOS
 
-- [ ] update legal part in the end
+- [ ] clusters in "Sentiment overview" made up -> missleading
+
+
+
+
+- [ ] remove "show more" button, when all are shown for oppinions list.
+  
+  # Fine for now
+- [ ] Filter my location, user, ~~time~~
+- [ ] Move docker file to alpine linux, current setup looks like a mess (claude code -_-)
 - [ ] What is "contribution" table used for?
 - [ ] remove private imputs
-- [ ] clusters in "Sentiment overview" made up -> missleading
-- [ ] Make up/fetch locations & time for the oppinions
-- [ ] fix dark background for embedding map
-
-- [ ] Move docker file to alpine linux, current setup looks like a mess (claude code -_-)
-- [ ] political (instead of) map for location selection
-
-## Requirements
-- Neater UI
+- [ ] move js in opinions/templates/opinions/_cluster_results.html to external js file
+- [ ] Allow searching for all/without statement
