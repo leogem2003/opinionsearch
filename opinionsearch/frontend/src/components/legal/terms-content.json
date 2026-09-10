@@ -6,7 +6,7 @@
       "id": "current-experience",
       "heading": "What you can explore",
       "paragraphs": [
-        "Browse topics, open a discussion and explore positions, supporting reasons and original contributions. The issue form lets you try submitting your own text and reopening it with a receipt."
+        "Search original opinions and explore their model-estimated sentiment, or browse example discussions with positions and supporting reasons. The issue form lets you try submitting your own text and reopening it with a receipt."
       ]
     },
     {
@@ -21,7 +21,7 @@
       "id": "current-scope",
       "heading": "What is still being developed",
       "paragraphs": [
-        "The contribution service and automatic organisation of inputs into discussions are not implemented here. Submitting text does not publish it to the topic index or add it to the example charts.",
+        "Submissions pass through an embedding model for related-text search and a sentiment model for the Positive, Negative and Neutral overview. Sentiment estimates tone, not support for the searched topic. Automatic topic organisation and position or reason analysis are not implemented yet, and submissions are not added to the example charts.",
         "Operator details, contact information and policies for a public deployment remain to be established."
       ]
     }

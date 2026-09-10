@@ -50,7 +50,7 @@ export default function ContributionPage({ contributionId }) {
             <span aria-hidden="true">›</span><span aria-current="page">{isExample ? 'Contribution' : 'Your contribution'}</span>
           </nav>
           <header className="exploration-intro contribution-intro"><div>
-            <div className="understanding-meta"><span className={`understanding-badge ${isExample || contributionDemo ? 'is-demo' : ''}`}>{isExample ? 'Interface example' : contributionDemo ? 'Demo · saved in this tab only' : 'Saved privately'}</span><span>{dateLabel(data.createdAt)}</span></div>
+            <div className="understanding-meta"><span className={`understanding-badge ${isExample || contributionDemo ? 'is-demo' : ''}`}>{isExample ? 'Interface example' : contributionDemo ? 'Demo · saved in this tab only' : data.publication === 'public' ? data.searchable ? 'Available in search' : 'Saved · not yet searchable' : 'Saved privately'}</span><span>{dateLabel(data.createdAt)}</span></div>
             <h1>{isExample ? 'Original contribution' : contributionDemo ? 'Your demo contribution is saved' : 'Your contribution is saved'}</h1>
           </div></header>
         </div></section>
@@ -60,6 +60,7 @@ export default function ContributionPage({ contributionId }) {
             <blockquote>{data.text}</blockquote>
           </section>
           {!isExample && <><p className="understanding-note">{contributionDemo ? 'This text is stored in this tab for demonstration.' : 'Keep this tab to return to your saved text.'}</p><a className="civic-text-button" href="/#share-issue">Share another issue →</a></>}
+          {!isExample && data.searchable && <a className="atlas-source-link contribution-return" href="/topics">Search opinions →</a>}
           {returnURL && <a className="atlas-source-link contribution-return" href={returnURL}>← Back to {returnLabel}</a>}
         </div>
       </>}

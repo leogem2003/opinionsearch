@@ -21,6 +21,24 @@ from .sentiment import score_text
 EMBEDDING_DIM = 1024
 
 
+class Contribution(models.Model):
+    """Original input and its declared visibility; receipts are always private."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Preserve the visibility promised to submissions made before public intake.
+    publication = models.CharField(
+        max_length=7,
+        choices=[("private", "Private"), ("public", "Public")],
+        default="private",
+    )
+    submission_key_hash = models.CharField(max_length=64, unique=True, editable=False)
+    # Persist the private receipt so a lost response can be recovered on retry.
+    # Neither this field nor the submission key is exposed by the read endpoint.
+    access_token = models.CharField(max_length=64, editable=False)
+
+
 class User(models.Model):
     """Publisher of opinions, per design.md: just a username and a uuid.
 
@@ -55,7 +73,17 @@ class Opinion(models.Model):
     """
 
     text = models.TextField()
-    topic = models.CharField(max_length=200)
+    topic = models.CharField(max_length=200, blank=True)
+    # One searchable representation per source in this prototype. The stable
+    # source link preserves provenance and makes indexing retries idempotent.
+    contribution = models.OneToOneField(
+        Contribution,
+        null=True,
+        blank=True,
+        editable=False,
+        on_delete=models.PROTECT,
+        related_name="opinion",
+    )
     timestamp = models.DateTimeField(auto_now_add=True)
     geo_coordinates = models.PointField(geography=True, null=True, blank=True)
     author = models.ForeignKey(
@@ -64,6 +92,8 @@ class Opinion(models.Model):
         db_column="user_uuid",
         on_delete=models.CASCADE,
         related_name="opinions",
+        null=True,
+        blank=True,
     )
     # Null until the embedding has been computed and stored.
     embedding = VectorField(dimensions=EMBEDDING_DIM, null=True, blank=True)

@@ -3,6 +3,7 @@ import { CivicPage } from '../LandingPage'
 import { dateLabel, discussionURL } from './api'
 import { DISCUSSION_SORTS, discussionSort } from './discussion-sorting'
 import { directoryView, loadTopicDirectory } from './topic-directory'
+import OpinionSearch from './OpinionSearch'
 import './understanding.css'
 import './exploration.css'
 import './topic-index.css'
@@ -19,6 +20,7 @@ export default function TopicIndexPage() {
   const visible = directoryView(topics, { query, sort })
 
   useEffect(() => {
+    if (dataset !== 'demo') return
     const controller = new AbortController()
     setStatus('loading')
     loadTopicDirectory(dataset, { signal: controller.signal })
@@ -57,16 +59,17 @@ export default function TopicIndexPage() {
 
   return <CivicPage variant="explore"><main className="exploration-container exploration-main topic-index" id="main-content" data-testid="topic-index">
     <nav className="page-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">›</span><span aria-current="page">Topics</span></nav>
-    <header className="topic-heading"><h1>Explore topics</h1></header>
-    <div className="civic-dataset-switch" role="group" aria-label="Discussion dataset"><button aria-pressed={dataset === 'public'} onClick={() => chooseDataset('public')}>Public discussions</button><button aria-pressed={dataset === 'demo'} onClick={() => chooseDataset('demo')}>Example data</button></div>
-    {dataset === 'demo' && <p className="directory-example-note">Illustrative discussions and contributions.</p>}
+    <header className="topic-heading"><h1>{dataset === 'demo' ? 'Explore topics' : 'Explore opinions'}</h1></header>
+    <div className="civic-dataset-switch" role="group" aria-label="Discussion dataset"><button aria-pressed={dataset === 'public'} onClick={() => chooseDataset('public')}>Opinions</button><button aria-pressed={dataset === 'demo'} onClick={() => chooseDataset('demo')}>Example data</button></div>
+    {dataset === 'public' ? <OpinionSearch initialQuery={query} /> : <>
+    <p className="directory-example-note">Illustrative discussions and contributions.</p>
     <div className="directory-controls">
       <div><label htmlFor="directory-search">Search topics and discussions</label><input id="directory-search" type="search" value={query} onChange={event => { setQuery(event.target.value); update({ q: event.target.value }) }} placeholder="Find a discussion" /></div>
       <div><label htmlFor="discussion-sort">Sort discussions</label><select id="discussion-sort" value={sort} onChange={event => { setSort(event.target.value); update({ sort: event.target.value }) }}>{DISCUSSION_SORTS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></div>
     </div>
     <div className="directory-results" aria-busy={status === 'loading'}>
       {status === 'loading' ? <p className="civic-topic-message" role="status">Loading topics…</p> : status === 'error' ? <div className="understanding-empty"><p role="alert">Topics could not be loaded.</p><button className="civic-text-button" onClick={() => setAttempt(value => value + 1)}>Try again</button></div>
-        : !visible.length ? <div className="understanding-empty"><h2>{query ? 'No matching topics or discussions' : 'No public discussions yet'}</h2>{query ? <button className="civic-text-button" onClick={() => { setQuery(''); update({ q: null }) }}>Clear search</button> : <button className="civic-text-button" onClick={() => chooseDataset('demo')}>Explore an example →</button>}</div>
+        : !visible.length ? <div className="understanding-empty"><h2>{query ? 'No matching topics or discussions' : 'No example discussions yet'}</h2>{query && <button className="civic-text-button" onClick={() => { setQuery(''); update({ q: null }) }}>Clear search</button>}</div>
         : visible.map(topic => <details className="directory-topic" key={topic.id} id={'directory-' + topic.id} open={!closed.has(topic.id)}>
           <summary onClick={event => { event.preventDefault(); setClosed(current => { const next = new Set(current); if (next.has(topic.id)) next.delete(topic.id); else next.add(topic.id); return next }) }}><h2>{topic.title}</h2><span>{topic.discussions.length} discussion{topic.discussions.length === 1 ? '' : 's'}</span><span aria-hidden="true">{closed.has(topic.id) ? '+' : '−'}</span></summary>
           <ul className="directory-discussions">{topic.discussions.map(discussion => <li key={discussion.id}><a href={discussionLink(discussion)}><div><h3>{discussion.title}</h3><p>{discussion.contributionCount} contribution{discussion.contributionCount === 1 ? '' : 's'} <span aria-hidden="true">·</span> <span>{sort === 'newest' ? 'Started' : 'Last contribution'} {dateLabel(sort === 'newest' ? discussion.createdAt : discussion.lastContributionAt)}</span></p></div><span aria-hidden="true">→</span></a></li>)}</ul>
@@ -74,5 +77,6 @@ export default function TopicIndexPage() {
         </details>)}
     </div>
     <p className="civic-sr-only" role="status">{status === 'ready' ? `${visible.length} topics. Discussions sorted by ${discussionSort(sort).label.toLowerCase()}.` : ''}</p>
+    </>}
   </main></CivicPage>
 }

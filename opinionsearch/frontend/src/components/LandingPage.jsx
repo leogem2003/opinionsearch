@@ -3,6 +3,7 @@ import { APP_NAME } from '../constants/app'
 import { issueTextError, saveReceipt, submissionKey, topicIndexURL } from './understanding/api'
 import { loadTopicDirectory } from './understanding/topic-directory'
 import { contributionDemo, createContribution } from './understanding/contributions'
+import OpinionSearch from './understanding/OpinionSearch'
 import './landing-page.css'
 
 function ArrowIcon() {
@@ -99,7 +100,7 @@ function IssueComposer() {
       window.history.pushState(saved ? null : { opinionsearchReceipt: { id: result.id, accessToken: result.accessToken } }, '', `/contributions/${encodeURIComponent(result.id)}`)
       window.location.reload()
     } catch {
-      setError('We couldn’t confirm your submission. Your text is still here. Please try again.')
+      setError('We couldn’t finish your submission. Your text is still here. Please try again.')
     } finally {
       setSending(false)
     }
@@ -136,7 +137,7 @@ function IssueComposer() {
               data-testid="issue-input"
             />
             <div className="civic-composer-actions">
-              <span className="civic-composer-hint" id="issue-hint">{contributionDemo ? 'Demo · saved in this tab only' : 'Saved privately'}</span>
+              <span className="civic-composer-hint" id="issue-hint">{contributionDemo ? 'Demo · saved in this tab only' : 'Your text will be publicly searchable'}</span>
               <button className="civic-button" type="submit" disabled={!draft.trim() || sending} data-testid="issue-send">
                 {sending ? 'Sending…' : 'Send issue'} <ArrowIcon />
               </button>
@@ -166,6 +167,7 @@ function TopicBrowser() {
   }
 
   useEffect(() => {
+    if (dataset !== 'demo') return
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15000)
     let active = true
@@ -188,16 +190,17 @@ function TopicBrowser() {
       <header className="civic-section-header">
         <div>
           <p className="civic-eyebrow civic-section-label"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="6" cy="7" r="3" /><circle cx="18" cy="7" r="3" /><circle cx="12" cy="18" r="3" /><path d="M9 7h6M7.5 10l3 5M16.5 10l-3 5" /></svg>Explore</p>
-          <h2 id="topics-heading">Current topics</h2>
+          <h2 id="topics-heading">{dataset === 'demo' ? 'Current topics' : 'Explore opinions'}</h2>
         </div>
-        <div className="civic-search">
+        {dataset === 'demo' && <div className="civic-search">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 5 5" /></svg>
           <label className="civic-sr-only" htmlFor="topic-search">Search current topics</label>
           <input id="topic-search" type="search" placeholder="Search topics" value={query} onChange={(event) => updateBrowse(dataset, event.target.value)} disabled={status !== 'ready' || topics.length === 0} />
-        </div>
+        </div>}
       </header>
-      <div className="civic-dataset-switch" role="group" aria-label="Topic dataset"><button type="button" aria-pressed={dataset === 'public'} onClick={() => updateBrowse('public', '')}>Contributions</button><button type="button" aria-pressed={dataset === 'demo'} onClick={() => updateBrowse('demo', '')}>Example data</button></div>
-      {dataset === 'demo' && <p className="civic-dataset-note">Illustrative discussions and contributions.</p>}
+      <div className="civic-dataset-switch" role="group" aria-label="Topic dataset"><button type="button" aria-pressed={dataset === 'public'} onClick={() => updateBrowse('public', '')}>Opinions</button><button type="button" aria-pressed={dataset === 'demo'} onClick={() => updateBrowse('demo', '')}>Example data</button></div>
+      {dataset === 'public' ? <OpinionSearch initialQuery={query} /> : <>
+      <p className="civic-dataset-note">Illustrative discussions and contributions.</p>
       <p className="civic-sr-only" role="status">{status === 'ready' ? `${matches.length} topics found` : status === 'error' ? 'Topics could not be loaded' : 'Loading topics'}</p>
       <div className="civic-topic-content" aria-busy={status === 'loading'}>
         {status === 'loading' ? (
@@ -215,8 +218,7 @@ function TopicBrowser() {
               </svg>
             </div>
             <div className="civic-empty-copy">
-              <h3>{dataset === 'demo' ? 'No examples available yet' : 'No topics published yet'}</h3>
-              <div className="civic-empty-actions"><a className="civic-text-button" href="#share-issue" onClick={focusIssueInput}>Share an issue <ArrowIcon /></a>{dataset !== 'demo' && <button className="civic-text-button" onClick={() => updateBrowse('demo', '')}>Explore an example <ArrowIcon /></button>}</div>
+              <h3>No examples available yet</h3>
             </div>
           </div>
         ) : matches.length === 0 ? (
@@ -234,7 +236,8 @@ function TopicBrowser() {
           </ul>
         )}
       </div>
-      <a className="civic-text-button" href={topicIndexURL(dataset)}>Browse all topics <ArrowIcon /></a>
+      </>}
+      <a className="civic-text-button" href={topicIndexURL(dataset)}>{dataset === 'demo' ? 'Browse all topics' : 'Explore opinions'} <ArrowIcon /></a>
     </section>
   )
 }

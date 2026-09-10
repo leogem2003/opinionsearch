@@ -19,15 +19,15 @@ export function submissionKey() {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('')
 }
 
-export async function requestJSON(url, { token, body, method = 'GET', signal } = {}) {
+export async function requestJSON(url, { token, body, method = 'GET', signal, timeoutMs = 20000 } = {}) {
   const controller = new AbortController()
   const abort = () => controller.abort()
   if (signal?.aborted) controller.abort()
   signal?.addEventListener('abort', abort, { once: true })
-  const timeout = setTimeout(abort, 20000)
+  const timeout = setTimeout(abort, timeoutMs)
   try {
     const response = await fetch(url, {
-      method, signal: controller.signal,
+      method, signal: controller.signal, credentials: 'omit',
       headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     })

@@ -3,7 +3,9 @@ import math
 import colorsys
 
 import numpy as np
+from django.http import JsonResponse
 from django.shortcuts import render
+from django.views.decorators.http import require_GET
 
 from .projection import (
     MIN_POINTS_TO_PROJECT,
@@ -11,7 +13,7 @@ from .projection import (
     parse_n_neighbors,
     project_2d,
 )
-from .search import parse_max_distance, search_opinions_cached
+from .search import parse_max_distance, search_opinions, search_opinions_cached
 from .sentiment import SENTIMENT_LABELS, sentiment_label
 
 # A little headroom around the query on the scatter chart's axes, so the
@@ -22,7 +24,46 @@ AXIS_PADDING_FACTOR = 1.1
 # smaller copy drawn in the legend.
 QUERY_MARKER_RADII = (12, 5)
 LEGEND_STAR_RADII = (6, 2.5)
+SEARCH_LIMIT = 50
 
+
+@require_GET
+def search_api(request):
+    """Bounded, fresh results for the React frontend, using the shared query.
+
+    Sentiment describes the text's tone, not agreement with the query. Keep
+    UMAP and query sentiment computation on the existing HTML search page.
+    """
+    query = request.GET.get("query", "").strip()
+    if len(query) > 2000 or "\0" in query:
+        return JsonResponse(
+            {"error": {"message": "Use a search of at most 2,000 characters."}},
+            status=400,
+        )
+    results = []
+    if query:
+        matches = search_opinions(
+            query, parse_max_distance(request.GET.get("max_distance"))
+        )[:SEARCH_LIMIT]
+        results = [
+            {
+                "id": str(item.pk),
+                "contributionId": (
+                    str(item.contribution_id) if item.contribution_id else None
+                ),
+                "text": item.text,
+                "topic": item.topic,
+                "distance": float(item.distance),
+                "similarity": 1 - float(item.distance),
+                "sentiment": item.sentiment,
+                "sentimentLabel": sentiment_label(item.sentiment),
+            }
+            for item in matches
+        ]
+    return JsonResponse({"results": results, "limit": SEARCH_LIMIT})
+
+
+@require_GET
 def search(request):
     """Render the search page: results list, a sentiment histogram, and a
     2D plot of the results' embeddings.
@@ -171,32 +212,33 @@ def _build_plot_data(
         ],
     }
 
+
 def _topic_color(topic, num_hues=24):
     """
     Generates a stable, dynamic hex color for a topic.
     Uses quantization to ensure a minimum visual difference between colors.
     """
     digest = hashlib.md5(topic.encode()).hexdigest()
-    
+
     # Grab a large enough integer from the hash to use for math
     hash_val = int(digest[:8], 16)
-    
+
     # 1. Quantize the Hue
     # Snaps the color to one of `num_hues` distinct points on the color wheel.
     # 24 hues = a minimum of 15 degrees of separation between colors.
     hue_step = hash_val % num_hues
     hue = hue_step / num_hues
-    
-    # 2. Quantize the Lightness 
+
+    # 2. Quantize the Lightness
     # Use a different part of the hash to pick between 3 safe lightness levels.
     # We keep them between 0.35 and 0.51 to ensure dark text contrast on white.
     lightness_step = (hash_val // num_hues) % 3
-    lightness = 0.35 + (lightness_step * 0.08) # Yields 0.35, 0.43, or 0.51
-    
+    lightness = 0.35 + (lightness_step * 0.08)  # Yields 0.35, 0.43, or 0.51
+
     # 3. Lock Saturation
-    saturation = 0.70 
-    
+    saturation = 0.70
+
     # Convert HLS to RGB
     r, g, b = colorsys.hls_to_rgb(hue, lightness, saturation)
-    
+
     return "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))

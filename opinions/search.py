@@ -10,6 +10,7 @@ page) can then run the query the page runs instead of a look-alike of it.
 """
 
 import hashlib
+import math
 
 from django.core.cache import cache
 from pgvector.django import CosineDistance
@@ -104,7 +105,7 @@ def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
                 "id": opinion.id,
                 "text": opinion.text,
                 "topic": opinion.topic,
-                "author": opinion.author.username,
+                "author": opinion.author.username if opinion.author_id else None,
                 "distance": float(opinion.distance),
                 "similarity": 1 - float(opinion.distance),
                 "sentiment": opinion.sentiment,
@@ -126,5 +127,7 @@ def parse_max_distance(raw_value, default=DEFAULT_MAX_DISTANCE):
     try:
         value = float(raw_value)
     except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value):
         return default
     return min(max(value, 0.0), 1.0)

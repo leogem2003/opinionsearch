@@ -35,6 +35,8 @@ docker compose up --build
 The app listens at `http://localhost:8000`. The first build could take a while.
 `docker compose down -v` clears caches and the database.
 
+The [frontend](opinionsearch/frontend/README.md) runs separately and proxies `/api` to this backend. Its issue form saves the original contribution, runs the existing BGE-M3 embedding and sentiment models, and makes the linked opinion searchable. The [intake API](opinionsearch/frontend/API_CONTRACT.md) records visibility, provenance and retry behaviour.
+
 Run the tests:
 ```bash
 docker compose run --rm web uv run pytest
