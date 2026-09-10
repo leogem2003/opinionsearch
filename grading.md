@@ -28,6 +28,9 @@ Q: User agreement/TOS
 - [ ] What is "contribution" table used for?
 - [ ] remove private imputs
 - [ ] add uv run way to readme
+- [ ] clusters in "Sentiment overview" made up -> missleading
+- [ ] Make up locations & time for the oppinions
+- [ ] fix dark background for embedding map
 
 - [ ] Move docker file to alpine linux, current setup looks like a mess (claude code -_-)
 - [ ] political (instead of) map for location selection
