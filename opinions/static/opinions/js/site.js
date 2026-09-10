@@ -4,6 +4,35 @@
 (function () {
   'use strict';
 
+  // Keep feedback local to each form. Resizing never changes sending state.
+  document.querySelectorAll('form[data-busy-label]').forEach(function (form) {
+    var button = form.querySelector('button[type="submit"]');
+    var field = form.querySelector('textarea[name="text"]');
+    var originalLabel = button.innerHTML;
+    function updateButton() {
+      button.disabled = form.getAttribute('aria-busy') === 'true' || Boolean(field && !field.value.trim());
+    }
+    form.addEventListener('submit', function (event) {
+      if (button.disabled) {
+        event.preventDefault();
+        return;
+      }
+      form.setAttribute('aria-busy', 'true');
+      button.textContent = form.getAttribute('data-busy-label');
+      if (field) field.readOnly = true;
+      updateButton();
+    });
+    // Browsers can restore the sending state when returning with Back.
+    window.addEventListener('pageshow', function () {
+      form.removeAttribute('aria-busy');
+      button.innerHTML = originalLabel;
+      if (field) field.readOnly = false;
+      updateButton();
+    });
+    if (field) field.addEventListener('input', updateButton);
+    updateButton();
+  });
+
   // Auto-grow the issue textarea as the visitor types (was a layout effect
   // in the old React composer).
   document.querySelectorAll('[data-autogrow]').forEach(function (field) {
@@ -12,6 +41,7 @@
       field.style.height = Math.min(field.scrollHeight, 240) + 'px';
     };
     field.addEventListener('input', resize);
+    window.addEventListener('resize', resize);
     resize();
   });
 

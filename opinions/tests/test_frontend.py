@@ -14,6 +14,7 @@ from django.core.cache import cache
 from django.db import DatabaseError, connections
 from django.test import Client
 from django.urls import reverse
+from django.utils.html import escape
 
 from opinions.models import Cluster, Contribution, Opinion, User
 from opinions.pipeline import index_contribution
@@ -60,12 +61,12 @@ def receipt_params(response):
 def test_submit_creates_and_redirects_to_a_url_carrying_the_receipt(embedding):
     client = Client()
     public_count = Opinion.objects.count()
-    text = "  Housing 🏡\nSchöne Wohnungen.  "
+    text = "\n  Housing 🏡\nSchöne Wohnungen.  \n"
     saved = submit(client, text)
     path, token = receipt_params(saved)
     assert len(token) == 43
     source = Contribution.objects.get()
-    assert source.text == text.strip()
+    assert source.text == text
     assert source.publication == "public"
     assert source.submission_key_hash == hashlib.sha256(KEY.encode()).hexdigest()
     assert path == f"/contributions/{source.id}/"
@@ -74,16 +75,17 @@ def test_submit_creates_and_redirects_to_a_url_carrying_the_receipt(embedding):
     assert page.status_code == 200
     assert page.context["contribution"] == source
     assert page.context["searchable"] is True
-    assert text.strip() in page.content.decode()
+    assert text in page.content.decode()
     assert token not in page.content.decode()
 
     assert Opinion.objects.count() == public_count + 1
     opinion = Opinion.objects.get(contribution=source)
+    assert opinion.text == text
     assert opinion.author is None
     assert not opinion.clusters.exists()
     assert opinion.sentiment == 4
     assert list(opinion.embedding) == VECTOR
-    embedding.assert_called_once_with(text.strip())
+    embedding.assert_called_once_with(text)
 
 
 @pytest.mark.django_db
@@ -128,6 +130,33 @@ def test_key_collision_with_different_text_starts_a_fresh_contribution(client):
     assert second_source.text == "A different issue."
 
 
+@pytest.mark.django_db
+def test_edited_failed_submission_reuses_its_source_and_effective_key(
+    client, embedding
+):
+    embedding.side_effect = RuntimeError("Model unavailable")
+    assert submit(client, text="Original draft").status_code == 503
+    text = "\n  Edited <draft>.  \n"
+    failed = submit(client, text=text)
+    key = failed.context["submission_key"]
+    assert failed.status_code == 503
+    assert key != KEY
+    assert f">\n{escape(text)}</textarea>" in failed.content.decode()
+    source = Contribution.objects.get(text=text)
+    assert b"Your original text is saved" in failed.content
+
+    assert submit(client, text=text, key=key).status_code == 503
+    # Replaying the preceding request must also recover the same source.
+    assert submit(client, text=text, key=KEY).status_code == 503
+    assert Contribution.objects.count() == 2
+
+    embedding.side_effect = None
+    saved = submit(client, text=text, key=key)
+    assert receipt_params(saved)[0] == f"/contributions/{source.id}/"
+    assert Opinion.objects.get(contribution=source).text == text
+    assert Contribution.objects.count() == 2
+
+
 @pytest.mark.django_db(transaction=True)
 def test_concurrent_retries_create_one_durable_contribution():
     text = "Same text"
@@ -149,7 +178,9 @@ def test_concurrent_retries_create_one_durable_contribution():
     assert len(targets) == 1
 
 
-@pytest.mark.parametrize("text", ["", " \n ", "x" * 2001, "bad\0text"])
+@pytest.mark.parametrize(
+    "text", ["", " \n ", "x" * 2001, " " + "x" * 2000, "bad\0text"]
+)
 @pytest.mark.django_db
 def test_invalid_text_is_rejected_without_storage(client, text):
     # Unlike the retired JSON endpoint, a plain HTML form can't submit a
@@ -344,6 +375,67 @@ def test_topics_browse_idle_shows_directory_without_embedding_a_query(
     assert response.status_code == 200
     assert response.context["results"] is None
     assert response.context["directory"]
+
+
+@pytest.mark.django_db
+def test_search_failure_preserves_query_and_shows_a_readable_error(client, monkeypatch):
+    monkeypatch.setattr(
+        "opinions.search.embed_text",
+        Mock(side_effect=RuntimeError("Internal model details")),
+    )
+    response = client.get("/topics/", {"q": "Housing"})
+    assert response.status_code == 503
+    assert response.context["query"] == "Housing"
+    assert b"Search is unavailable" in response.content
+    assert b"Internal model details" not in response.content
+
+
+@pytest.mark.django_db
+def test_storage_failure_keeps_forms_and_topic_errors_readable(client, monkeypatch):
+    failure = Mock(side_effect=DatabaseError("Internal storage details"))
+    monkeypatch.setattr(Opinion.objects, "aggregate", failure)
+    monkeypatch.setattr(Contribution.objects, "get_or_create", failure)
+    home = client.get("/")
+    assert home.context["directory_error"]
+    assert b"No opinions yet" not in home.content
+    failed = submit(client, text="Keep my draft.")
+    assert failed.status_code == 503
+    assert failed.context["text"] == "Keep my draft."
+    for path in ("/topics/", "/topics/housing/"):
+        response = client.get(path)
+        assert response.status_code == 503
+        assert b"could not be loaded" in response.content
+        assert b"Internal storage details" not in response.content
+
+
+def test_startup_prepares_models_before_serving_and_stops_on_failure(monkeypatch):
+    from docker.app import serve
+
+    calls = []
+    monkeypatch.setattr(serve.django, "setup", Mock())
+    monkeypatch.setattr(
+        "opinions.embedding.embed_text",
+        lambda text: calls.append("embedding") or VECTOR,
+    )
+    scorer = Mock(side_effect=lambda text: calls.append("sentiment"))
+    monkeypatch.setattr("opinions.sentiment.score_text", scorer)
+    monkeypatch.setattr(
+        "opinions.topic_classification.classify_topics",
+        lambda text, embedding: calls.append("topics"),
+    )
+    server = Mock(side_effect=lambda *args, **kwargs: calls.append("serve"))
+    monkeypatch.setattr(serve, "call_command", server)
+    serve.main()
+    assert calls == ["embedding", "sentiment", "topics", "serve"]
+    server.assert_called_once_with("runserver", "0.0.0.0:8000", use_reloader=False)
+
+    server.reset_mock()
+    calls.clear()
+    scorer.side_effect = RuntimeError("Model unavailable")
+    with pytest.raises(RuntimeError, match="Model unavailable"):
+        serve.main()
+    assert calls == ["embedding"]
+    server.assert_not_called()
 
 
 @pytest.mark.django_db

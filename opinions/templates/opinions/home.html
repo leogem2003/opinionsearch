@@ -37,7 +37,7 @@
         </div>
       </header>
       <div class="civic-composer">
-        <form method="post" action="/">
+        <form method="post" action="/#share-issue" data-busy-label="Sending…">
           {% csrf_token %}
           <input type="hidden" name="submission_key" value="{{ submission_key }}">
           <textarea
@@ -50,7 +50,8 @@
             data-autogrow
             data-submit-on-mod-enter
             aria-describedby="issue-hint{% if error %} issue-error{% endif %}"
-          >{{ text }}</textarea>
+          >
+{{ text }}</textarea>
           <div class="civic-composer-actions">
             <span class="civic-composer-hint" id="issue-hint">Your text will be publicly searchable</span>
             <button class="civic-button" type="submit">
@@ -73,7 +74,7 @@
           <h2 id="topics-heading">Explore opinions</h2>
         </div>
       </header>
-      <form role="search" aria-label="Search opinions" method="get" action="/topics/">
+      <form role="search" aria-label="Search opinions" method="get" action="/topics/" data-busy-label="Searching…">
         <label for="teaser-query" class="civic-sr-only">Search opinions</label>
         <div class="opinion-search-controls">
           <input id="teaser-query" type="search" name="q" placeholder="A topic or statement, such as affordable housing">
@@ -81,7 +82,9 @@
         </div>
       </form>
       <div class="civic-topic-content">
-        {% if topics %}
+        {% if directory_error %}
+          <p class="civic-error" role="alert">{{ directory_error }}</p>
+        {% elif topics %}
           <ul class="civic-topic-list">
             {% for topic in topics %}
               <li>

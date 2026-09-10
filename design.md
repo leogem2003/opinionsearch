@@ -2,11 +2,17 @@
 
 ## Local startup
 
-`docker compose up --build` runs the Django/PostgreSQL stack at `localhost:8000`.
+`./run` runs the Django/PostgreSQL stack at `localhost:8000` and waits for readiness
+before opening Safari on macOS or the default browser on a Linux desktop. It
+prints the URL when no browser opener is available. `docker/app/serve.py` prepares
+embedding, sentiment and topic classification in the serving process before
+starting Django; failed preparation stops startup. Model downloads persist in a
+Docker volume. Source edits are mounted: restart with `./run --force-recreate`
+after Python/template changes, refresh after CSS/JavaScript changes, and use
+`./run --build` after dependency or image changes.
 Django serves the frontend directly as server-rendered HTML/CSS, with a little
 framework-free JavaScript for minor interactivity (no separate Node process or
-build step). This keeps prototype startup in one existing configuration file;
-production hosting remains separate work.
+build step). Production hosting remains separate work.
 
 ## Backend
 ### Databases
@@ -46,6 +52,8 @@ which is why membership is many-to-many rather than a single foreign key.
 hidden submission key. Submitting it states that the text will be publicly
 searchable and posts the text back to `/` alongside that key, always as
 `publication: "public"`.
+Validation checks for blank input using stripped text, but stores the original
+text with its spaces and line breaks unchanged (at most 2,000 characters).
 The view commits the original Contribution (`Contribution.objects.get_or_create`
 keyed on the submission key's hash, so a resubmission after a failure reuses the
 same row instead of duplicating it), then calls `opinions/pipeline.py`'s
@@ -57,6 +65,13 @@ URL rather than a cookie or client-side storage, since a server-rendered page
 has no script-managed store to keep it in. Model failures retain the original
 source and re-render the form (same hidden key, submitted text preserved) with
 a retry message, so submitting again completes indexing without a duplicate row.
+Editing a previously saved draft creates a separate source with a stable key
+derived from that form and the edited text. Failure responses retain this effective
+key, and replaying the preceding request also recovers the same source. The earlier
+source is unchanged. Forms show sending/searching feedback and prevent duplicate
+submissions while active; browser Back restores the controls. Search and storage
+failures retain the user's input and show readable messages. Topic sorting has an
+Apply button when JavaScript is disabled.
 The saved-text page (`/contributions/<id>/?receipt=...`) looks the receipt up
 the same way the old `Authorization: Bearer` header check did — comparing the
 query parameter against the stored access token with `secrets.compare_digest` —

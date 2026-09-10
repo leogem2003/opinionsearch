@@ -1,0 +1,52 @@
+#!/bin/bash
+# Run the local website on macOS or Linux, then open a browser when available.
+set -euo pipefail
+cd -- "$(dirname -- "$0")"
+platform=$(uname -s)
+
+if ! command -v docker >/dev/null 2>&1; then
+  if [[ "$platform" == Darwin ]]; then
+    echo "Install Docker Desktop, then run ./run again."
+  else
+    echo "Install Docker Engine and the Docker Compose plugin, then run ./run again."
+  fi
+  exit 1
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+  echo "Docker Compose is missing. Install the Compose plugin or update Docker Desktop."
+  exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  if [[ "$platform" != Darwin ]]; then
+    echo "Docker is unavailable. Start Docker Engine and ensure your user can access it."
+    exit 1
+  fi
+  if ! open -a Docker; then
+    echo "Start Docker Desktop, then run ./run again."
+    exit 1
+  fi
+  echo "Waiting for Docker to start..."
+  for ((attempt = 0; attempt < 60; attempt++)); do
+    if docker info >/dev/null 2>&1; then break; fi
+    sleep 2
+  done
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker is not ready. Check Docker Desktop and try again."
+    exit 1
+  fi
+fi
+
+# Reuse installed dependencies and model downloads. Missing images are built.
+echo "Preparing the website and AI models. First startup may take several minutes."
+echo "Progress: docker compose logs -f web"
+docker compose up -d --remove-orphans --wait --wait-timeout 1800 "$@"
+
+url=http://localhost:8000
+echo "OpinionSearch is ready: $url"
+if [[ "$platform" == Darwin ]]; then
+  open -b com.apple.Safari "$url" || echo "Open $url in your browser."
+elif command -v xdg-open >/dev/null 2>&1 && [[ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]]; then
+  xdg-open "$url" >/dev/null 2>&1 || echo "Open $url in your browser."
+fi
