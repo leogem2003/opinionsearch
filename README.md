@@ -64,7 +64,7 @@ See [LICENSE.txt](LICENSE.txt)
 #### Inspirations: 
 - [github.com/Carbon-copy-PS/murmi](https://github.com/Carbon-copy-PS/murmi)
 - Lectures by *Herr Prof. Dr Helbing Dirk* and many others from the course *Hacking Democracy: Co-Creating Innovative Tools for Participatory Politics HS2026* at ETHZ Zurich
-- [pol.is](https://pol.is/)
+- [pol.is](https://pol.is/) as inspiration 
 
 ### Developers
 - [@leogem2003](https://github.com/leogem2003), architecture design design, prompt engineering, programming
