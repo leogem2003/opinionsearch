@@ -36,7 +36,7 @@ def search(request):
                 "text": opinion.text,
                 "topic": opinion.topic,
                 "distance": opinion.distance,
-                "similarity": 1 - opinion.distance,
+                "distance": opinion.distance,
             }
             for opinion in matches
         ]
