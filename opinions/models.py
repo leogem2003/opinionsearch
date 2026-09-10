@@ -1,8 +1,10 @@
-"""Data model for opinions, their arguments, and their embeddings.
+"""Data model for opinions, their arguments, embeddings, and sentiment.
 
 Layout follows design.md: a single PostgreSQL database where pgvector holds the
 embeddings and clusters, PostGIS holds geo data. Opinion embeds both the text
-and the vector directly.
+and the vector directly. Sentiment isn't part of design.md; it's stored the
+same way the embedding is (computed on first save, see ``Opinion.save``)
+because it's the same kind of derived-from-text-at-write-time value.
 """
 
 import uuid
@@ -13,6 +15,7 @@ from django.contrib.gis.db import models
 from pgvector.django import HnswIndex, VectorField
 
 from .embedding import embed_text
+from .sentiment import score_text
 
 # Dense embedding width of BGE-M3, the model named in design.md.
 EMBEDDING_DIM = 1024
@@ -64,6 +67,11 @@ class Opinion(models.Model):
     )
     # Null until the embedding has been computed and stored.
     embedding = VectorField(dimensions=EMBEDDING_DIM, null=True, blank=True)
+    # A 1-5 star rating from opinions/sentiment.py, null until computed. Not
+    # editable in /admin (see OpinionAdmin.readonly_fields) for the same
+    # reason embedding/cluster aren't: it's a derived value, not one to set
+    # by hand. opinions.sentiment.sentiment_label() turns it into a label.
+    sentiment = models.PositiveSmallIntegerField(null=True, blank=True)
     cluster = models.ForeignKey(
         Cluster,
         null=True,
@@ -85,15 +93,18 @@ class Opinion(models.Model):
         ]
 
     def save(self, *args, **kwargs):
-        """Embed on first save (design.md write path).
+        """Embed and score sentiment on first save (design.md write path, plus sentiment).
 
-        The opinion text is fed into BGE-M3, the resulting vector is stored
-        directly on the Opinion row before it's written to the database.
-        Editing an already embedded opinion's text does not currently re-embed
-        it; there's no re-clustering path yet either (clustering isn't implemented).
+        The opinion text is fed into BGE-M3 and into the sentiment model
+        (opinions/sentiment.py); both results are stored directly on the
+        Opinion row before it's written to the database. Editing an already
+        embedded/scored opinion's text does not currently redo either; there's
+        no re-clustering path yet either (clustering isn't implemented).
         """
         if self.embedding is None and self.text:
             self.embedding = embed_text(self.text)
+        if self.sentiment is None and self.text:
+            self.sentiment = score_text(self.text)
         super().save(*args, **kwargs)
 
     def __str__(self):

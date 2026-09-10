@@ -18,6 +18,7 @@ import pytest
 from django.urls import reverse
 
 from opinions.models import Opinion
+from opinions.sentiment import SENTIMENT_LABELS
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_opinions.json"
 STATEMENTS = json.loads(FIXTURE_PATH.read_text())["statements"]
@@ -77,3 +78,19 @@ def test_results_are_sorted_by_ascending_distance(client, search_url):
 
     distances = [result["distance"] for result in response.context["results"]]
     assert distances == sorted(distances)
+
+
+@pytest.mark.django_db
+def test_results_carry_a_scored_sentiment_and_matching_label(client, search_url):
+    # The fixture is loaded via load_opinions_fixture (see conftest.py),
+    # which -- like Opinion.save() -- scores sentiment for every opinion it
+    # creates, so every result here should have one.
+    query_text = STATEMENTS[3]["text"]
+
+    response = client.get(search_url, {"query": query_text, "max_distance": "1"})
+
+    results = response.context["results"]
+    assert results  # otherwise the loop below would vacuously pass
+    for result in results:
+        assert result["sentiment"] in SENTIMENT_LABELS
+        assert result["sentiment_label"] == SENTIMENT_LABELS[result["sentiment"]]

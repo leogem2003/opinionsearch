@@ -60,7 +60,8 @@
                 {% if query_point %}
                     <span>
                         <svg class="star-swatch" width="14" height="14" viewBox="0 0 14 14">
-                            <polygon points="{{ legend_star_points }}" fill="#000"></polygon>
+                            <polygon class="star-shape" fill="#000"
+                                     data-cx="7" data-cy="7" data-outer-r="6" data-inner-r="2.5"></polygon>
                         </svg>your query
                     </span>
                 {% endif %}
@@ -77,14 +78,18 @@
                             data-topic="{{ point.topic }}"
                             data-author="{{ point.author }}"
                             data-similarity="{{ point.similarity|floatformat:4 }}"
+                            data-sentiment="{{ point.sentiment_label }} ({{ point.sentiment|default:'?' }}/5)"
                             onclick="showOpinion(this)"></circle>
                 {% endfor %}
                 {% if query_point %}
-                    <polygon class="query-marker plot-marker" points="{{ query_point.star_points }}"
+                    <polygon class="query-marker plot-marker star-shape"
+                             data-cx="{{ query_point.x }}" data-cy="{{ query_point.y }}"
+                             data-outer-r="12" data-inner-r="5"
                              data-text="{{ query }}"
                              data-topic="Your search query"
                              data-author="(this is what you typed, not a stored opinion)"
                              data-similarity="1.0000"
+                             data-sentiment="n/a &mdash; not a stored opinion"
                              onclick="showOpinion(this)"></polygon>
                 {% endif %}
             </svg>
@@ -92,6 +97,7 @@
                 <p><strong id="opinion-topic"></strong></p>
                 <p id="opinion-text"></p>
                 <p>by <span id="opinion-author"></span> &mdash; similarity <span id="opinion-similarity"></span></p>
+                <p>sentiment: <span id="opinion-sentiment"></span></p>
             </div>
         {% elif too_few_to_plot %}
             <p>Only {{ results|length }} result(s) &mdash; need at least {{ min_points_to_plot }} to plot a projection.</p>
@@ -102,7 +108,8 @@
             {% for result in results %}
                 <li>
                     {{ result.text }}
-                    (similarity: {{ result.similarity|floatformat:4 }}, topic: {{ result.topic }})
+                    (similarity: {{ result.similarity|floatformat:4 }}, topic: {{ result.topic }},
+                    sentiment: {{ result.sentiment_label }} ({{ result.sentiment|default:"?" }}/5))
                 </li>
             {% endfor %}
         </ul>
@@ -112,11 +119,32 @@
 {% endif %}
 
 <script>
+    // Turns a center point + two radii into the "points" attribute for a
+    // 5-point SVG <polygon> star. Purely a drawing detail -- the backend
+    // only ever hands the template a center (see .star-shape below), never
+    // polygon geometry.
+    function starPoints(cx, cy, outerR, innerR) {
+        var coords = [];
+        for (var i = 0; i < 10; i++) {
+            var angle = Math.PI / 2 + (i * Math.PI) / 5;
+            var r = i % 2 === 0 ? outerR : innerR;
+            coords.push((cx + r * Math.cos(angle)).toFixed(1) + ',' + (cy - r * Math.sin(angle)).toFixed(1));
+        }
+        return coords.join(' ');
+    }
+
+    document.querySelectorAll('.star-shape').forEach(function (star) {
+        star.setAttribute('points', starPoints(
+            +star.dataset.cx, +star.dataset.cy, +star.dataset.outerR, +star.dataset.innerR
+        ));
+    });
+
     function showOpinion(circle) {
         document.getElementById('opinion-topic').textContent = circle.dataset.topic;
         document.getElementById('opinion-text').textContent = circle.dataset.text;
         document.getElementById('opinion-author').textContent = circle.dataset.author;
         document.getElementById('opinion-similarity').textContent = circle.dataset.similarity;
+        document.getElementById('opinion-sentiment').textContent = circle.dataset.sentiment;
         document.getElementById('opinion-detail').hidden = false;
 
         document.querySelectorAll('.plot-marker.selected').forEach(function (marker) {

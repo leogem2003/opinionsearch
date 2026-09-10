@@ -1,5 +1,4 @@
 import hashlib
-import math
 
 import numpy as np
 from django.shortcuts import render
@@ -11,17 +10,16 @@ from .projection import (
     project_2d,
 )
 from .search import parse_max_distance, search_opinions_cached
+from .sentiment import sentiment_label
 
 # The plot is an inline SVG in the template; these define its coordinate
-# space (viewBox) and how far points are kept from the edges.
+# space (viewBox) and how far points are kept from the edges. Drawing the
+# query's star marker itself (turning a center point into a polygon) is left
+# to the template/JS -- see search.html's starPoints() -- since it's pure
+# presentation, not something derived from the data.
 PLOT_WIDTH = 760
 PLOT_HEIGHT = 520
 PLOT_PADDING = 24
-
-# Size of the star marking the query itself (see _star_points), and of its
-# smaller copy drawn in the legend.
-QUERY_MARKER_RADII = (12, 5)
-LEGEND_STAR_RADII = (6, 2.5)
 
 # Fixed, tab10-like palette. A topic maps onto one of these by hashing its
 # name (see _topic_color) rather than by position in this request's result
@@ -66,8 +64,17 @@ def search(request):
         cached = search_opinions_cached(query, max_distance)
         rows = cached["rows"]
         # Drop each row's embedding for the plain-text results list below --
-        # it's only needed for the projection, computed separately.
-        results = [{k: v for k, v in row.items() if k != "embedding"} for row in rows]
+        # it's only needed for the projection, computed separately. Add the
+        # sentiment label here rather than storing it on the row: it's a
+        # display concern derived from the stored 1-5 score, same as
+        # "similarity" is derived from "distance".
+        results = [
+            {
+                **{k: v for k, v in row.items() if k != "embedding"},
+                "sentiment_label": sentiment_label(row["sentiment"]),
+            }
+            for row in rows
+        ]
 
         if len(rows) >= MIN_POINTS_TO_PROJECT:
             points, query_point = _project_points(
@@ -88,7 +95,6 @@ def search(request):
             "results": results,
             "points": points,
             "query_point": query_point,
-            "legend_star_points": _star_points(7, 7, *LEGEND_STAR_RADII),
             "topics": [
                 {"name": topic, "color": _topic_color(topic)} for topic in topics
             ],
@@ -140,6 +146,8 @@ def _project_points(rows, query_embedding, n_neighbors, min_dist):
                 "topic": row["topic"],
                 "author": row["author"],
                 "similarity": row["similarity"],
+                "sentiment": row["sentiment"],
+                "sentiment_label": sentiment_label(row["sentiment"]),
                 "color": _topic_color(row["topic"]),
                 "x": screen_x,
                 "y": screen_y,
@@ -147,26 +155,8 @@ def _project_points(rows, query_embedding, n_neighbors, min_dist):
         )
 
     query_x, query_y = to_screen(*query_coord)
-    query_point = {
-        "x": query_x,
-        "y": query_y,
-        "star_points": _star_points(query_x, query_y, *QUERY_MARKER_RADII),
-    }
+    query_point = {"x": query_x, "y": query_y}
     return points, query_point
-
-
-def _star_points(cx, cy, outer_r, inner_r):
-    """The ``points`` attribute for a 5-point SVG ``<polygon>`` star.
-
-    Used both for the query's marker on the plot and for its match in the
-    legend, so the legend swatch is recognisably the same shape.
-    """
-    coords = []
-    for i in range(10):
-        angle = math.pi / 2 + i * math.pi / 5
-        r = outer_r if i % 2 == 0 else inner_r
-        coords.append(f"{cx + r * math.cos(angle):.1f},{cy - r * math.sin(angle):.1f}")
-    return " ".join(coords)
 
 
 def _topic_color(topic):
