@@ -8,9 +8,13 @@ Early stage. PostgreSQL with PostGIS and pgvector backs the `opinions` app. The 
 
 ## Commands
 
-`docker compose up --build` starts the whole local website at `http://localhost:8000`;
-Django serves the frontend directly, so there is only the one `web` service (plus
-`db`) to wait on. See README for startup details; this remains a development/showcase setup.
+`./run` starts the local website at `http://localhost:8000`, waits for database/model
+readiness, then opens Safari on macOS or the default browser on a Linux desktop.
+Headless use prints the URL. `docker/app/serve.py` prepares the models in the
+serving process; autoreload is disabled. Source is mounted: use
+`./run --force-recreate` after Python/template changes and `./run --build` after
+dependency/image changes. CSS/JavaScript changes need a browser refresh.
+`docker compose stop` stops the services. See README; this is a development/showcase setup.
 
 Dependencies are managed with `uv` (see `uv.lock`); `flake.nix` provides a Nix devShell with `python3` + `uv` and sets `UV_PYTHON_PREFERENCE=system`.
 
