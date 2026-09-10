@@ -217,6 +217,8 @@ input:focus, select:focus { border-color: var(--brand-teal); }
 .atlas-chart-heading p { margin-top: 8px; color: #bfd2ce; font-size: .875rem; line-height: 1.5; }
 .civic-page .atlas-reset { border: 1px solid #78938c; border-radius: 4px; min-height: 44px; padding: 8px 10px; background: transparent; color: #e4eddb; font-size: .875rem; }
 .atlas-reset:hover { background: #2b514b; }
+.atlas-map-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.atlas-zoom-button { min-width: 44px; padding: 8px; font-size: 1.125rem; line-height: 1; font-weight: 600; }
 .atlas-chart-note { margin-top: 18px; color: #becfc9; font-size: .8125rem; line-height: 1.6; }
 .opinion-detail { margin-top: 28px; scroll-margin-top: 20px; }
 .opinion-detail-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; padding-bottom: 16px; border-bottom: 1px solid #c9d9de; }
@@ -271,23 +273,58 @@ input:focus, select:focus { border-color: var(--brand-teal); }
 /* Cluster search + topic browse pages */
 .cluster-search-form { margin-block: 22px 28px; }
 .cluster-search-sliders { display: flex; flex-wrap: wrap; gap: 20px 32px; margin-top: 18px; }
-.cluster-search-sliders label { display: flex; flex-direction: column; gap: 6px; font-size: .8125rem; color: var(--civic-muted); min-width: 220px; }
+.cluster-search-sliders label { display: flex; flex-direction: column; gap: 6px; font-size: .8125rem; font-weight: 600; color: var(--civic-ink); min-width: 220px; }
 .cluster-search-sliders input[type="range"] { width: 100%; }
+.cluster-search-sliders .slider-hint { font-size: .75rem; font-weight: 400; color: var(--civic-muted); }
 .topic-level-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
 .topic-level-tabs a { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 14px; border: 1px solid var(--civic-line); border-radius: var(--control-radius); color: var(--civic-muted); font-size: .8125rem; font-weight: 600; text-decoration: none; background: #fff; }
 .topic-level-tabs a:hover { background: #eaf0f3; }
 .topic-level-tabs a.is-current { border-color: var(--civic-accent); background: var(--civic-accent); color: #fff; }
 .cluster-search-matches { margin-bottom: 20px; color: var(--civic-muted); font-size: .875rem; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .cluster-chip { display: inline-flex; padding: 5px 10px; border-radius: 5px; background: #e4eff1; color: #185765; font-size: .8125rem; font-weight: 600; }
+.cluster-search-dates { display: flex; flex-wrap: wrap; gap: 16px 28px; margin-top: 16px; }
+.cluster-search-dates label { display: flex; flex-direction: column; gap: 6px; font-size: .8125rem; color: var(--civic-muted); }
+.cluster-search-dates input[type="date"] { padding: 9px 10px; border: 1px solid var(--civic-line); border-radius: var(--control-radius); color: var(--civic-ink); background: #fff; font: inherit; }
+
+/* Search/browse plot panels: a light background, unlike /topics/'s dark
+   .atlas-chart-panel (which these deliberately don't reuse) -- a real
+   UMAP/geographic map needs to stay legible against a plain page, and the
+   dots/markers already carry enough colour of their own. */
+.search-map-panel { min-width: 0; padding: 26px 30px 22px; border: 1px solid var(--civic-line); border-radius: 10px; background: #fff; color: var(--civic-ink); scroll-margin-top: 16px; }
+.search-map-panel + .search-map-panel { margin-top: 20px; }
+.search-map-panel .atlas-chart-heading h2 { color: var(--civic-ink); }
+.search-map-panel .atlas-chart-heading p { color: var(--civic-muted); }
+.search-map-panel .search-map-eyebrow { margin: 0 0 12px; color: var(--civic-accent); font-size: .7rem; text-transform: uppercase; letter-spacing: .13em; }
+.search-map-panel .atlas-chart-note { color: var(--civic-muted); }
+.civic-page .search-map-panel .atlas-reset { border-color: var(--civic-line); color: var(--civic-ink); }
+.search-map-panel .atlas-reset:hover { background: #eaf0f3; }
+
+.search-map-controls { display: flex; flex-wrap: wrap; gap: 20px 32px; margin: 16px 0; padding: 14px 16px; border: 1px solid var(--civic-line); border-radius: 8px; background: var(--civic-canvas); }
+.search-map-controls fieldset { display: flex; align-items: center; gap: 12px; border: 0; padding: 0; }
+.search-map-controls legend { font-size: .75rem; font-weight: 600; color: var(--civic-muted); padding: 0; }
+.search-map-controls label { display: inline-flex; align-items: center; gap: 6px; font-size: .8125rem; color: var(--civic-ink); }
+
 #sentiment-chart-wrapper { position: relative; height: 260px; margin-top: 10px; }
-#scatter-chart-wrapper { position: relative; margin-top: 10px; cursor: grab; }
+/* A share of the viewport height rather than a fixed pixel count, so the
+   map has real room to work with on tall screens -- clamped so it never
+   gets unreasonably short or tall. */
+#scatter-chart-wrapper, #geo-map { height: clamp(420px, 62vh, 720px); }
+#scatter-chart-wrapper { position: relative; margin-top: 10px; padding: 8px; border: 1px solid var(--civic-line); border-radius: 6px; cursor: grab; }
 #scatter-chart-wrapper:active { cursor: grabbing; }
 /* chartjs-plugin-zoom needs this so the browser doesn't intercept
    drag/pinch gestures over the canvas before the plugin sees them. */
 #scatter-chart { touch-action: none; }
-.atlas-chart-panel + .atlas-chart-panel { margin-top: 20px; }
-.opinion-detail-callout { margin-top: 16px; padding: 14px 16px; border-radius: 6px; background: #ffffff10; color: #edf5ef; }
-.opinion-detail-callout p { margin-top: 4px; font-size: .875rem; }
+#geo-map-wrapper { margin-top: 10px; }
+#geo-map { border-radius: 6px; border: 1px solid var(--civic-line); }
+.search-map-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; }
+.search-map-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: .75rem; color: var(--civic-muted); }
+.search-map-legend-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+.opinion-detail-callout { margin-top: 16px; padding: 22px 24px; border-radius: 10px; background: #fff; border: 1px solid var(--civic-line); border-top: 3px solid var(--civic-accent); color: var(--civic-ink); }
+.opinion-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 14px; }
+.opinion-sentiment-badge { display: inline-flex; align-items: center; padding: 5px 10px; border-radius: 5px; background: var(--civic-canvas); color: var(--civic-muted); font-size: .73rem; font-weight: 600; }
+.opinion-detail-callout blockquote { font: 400 1.0625rem/1.65 Georgia, serif; color: #244c58; overflow-wrap: anywhere; white-space: pre-wrap; }
+.opinion-detail-callout .search-source-reference { margin-top: 14px; }
 .opinion-detail-callout p:first-child { margin-top: 0; font-size: 1rem; }
 .cluster-browse-list { list-style: none; border: 1px solid var(--civic-line); border-radius: 8px; background: #fff; padding: 0 22px; margin-top: 22px; }
 .cluster-browse-list li { border-bottom: 1px solid var(--civic-line); }

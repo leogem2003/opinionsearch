@@ -32,6 +32,9 @@ fixture, load a sample of real tweets from sitting US Senators
 on the Hugging Face Hub) and cluster them in one step:
 ```bash
 uv run python manage.py load_senator_tweets
+
+# since the dataset on hugging face doesn't include them
+uv run python manage.py add_fictional_geo_time
 ```
 This replaces whatever Opinions already exist with a fresh, reproducible
 500-tweet sample (`--limit` to change the size — expect roughly 1.5

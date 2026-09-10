@@ -3,6 +3,7 @@ import hashlib
 
 import numpy as np
 from django.shortcuts import get_object_or_404, render
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_GET
 from pgvector.django import CosineDistance
 
@@ -50,6 +51,8 @@ def search(request):
     n = _parse_n(request.GET.get("n"))
     n_neighbors = parse_n_neighbors(request.GET.get("n_neighbors"))
     min_dist = parse_min_dist(request.GET.get("min_dist"))
+    date_from = parse_date(request.GET.get("date_from", ""))
+    date_to = parse_date(request.GET.get("date_to", ""))
     n_layers = layer_count()
     topic_level = _parse_topic_level(request.GET.get("topic_level"), n_layers)
 
@@ -58,6 +61,8 @@ def search(request):
         "n": n,
         "n_neighbors": n_neighbors,
         "min_dist": min_dist,
+        "date_from": date_from,
+        "date_to": date_to,
         "topic_level": topic_level,
         "max_topic_level": max(n_layers - 1, 0),
         "level_range": range(n_layers),
@@ -71,7 +76,7 @@ def search(request):
     if query and n_layers > 0:
         query_embedding, query_sentiment = embed_query_cached(query)
         closest = _closest_clusters(query_embedding, topic_level, n)
-        pairs = _opinions_for_clusters(closest)
+        pairs = _opinions_for_clusters(closest, date_from=date_from, date_to=date_to)
         context["clusters_found"] = [
             {"label": cluster.label or f"topic {cluster.evoc_id}", "size": cluster.size}
             for cluster in closest
@@ -175,22 +180,43 @@ def _closest_clusters(query_embedding, layer, n):
     )
 
 
-def _opinions_for_clusters(clusters, limit=SEARCH_LIMIT):
-    """(opinion, cluster) pairs for every member of any of ``clusters``.
+def _opinions_for_clusters(clusters, limit=SEARCH_LIMIT, date_from=None, date_to=None):
+    """(opinion, cluster) pairs for every member of any of ``clusters``, up
+    to ``limit`` total.
 
     EVōC labels each layer as a single partition, so an opinion belongs to
     at most one cluster per layer -- these clusters' memberships can't
-    overlap, so no de-duplication is needed across them. Nearest cluster's
-    members come first.
+    overlap, so no de-duplication is needed across them. Members are drawn
+    round-robin across clusters, nearest cluster first within each round,
+    rather than filling the nearest cluster's whole quota before touching
+    the next: a single large nearby topic would otherwise crowd every other
+    closest topic out of the limit entirely, so the plotted opinions (and
+    the topic colours drawn from them) would cover far fewer distinct
+    topics than "closest topics" actually found. ``date_from``/``date_to``
+    (inclusive, either or both optional) narrow each cluster's members by
+    ``Opinion.timestamp`` before the round-robin draw.
     """
-    pairs = []
+    queues = []
     for cluster in clusters:
-        if len(pairs) >= limit:
-            break
-        members = cluster.opinions.select_related("author").order_by(
-            "-timestamp", "-pk"
-        )[: limit - len(pairs)]
-        pairs.extend((opinion, cluster) for opinion in members)
+        members = cluster.opinions.select_related("author")
+        if date_from is not None:
+            members = members.filter(timestamp__date__gte=date_from)
+        if date_to is not None:
+            members = members.filter(timestamp__date__lte=date_to)
+        queues.append((cluster, iter(members.order_by("-timestamp", "-pk")[:limit])))
+
+    pairs = []
+    while len(pairs) < limit and queues:
+        still_going = []
+        for cluster, queue in queues:
+            if len(pairs) >= limit:
+                still_going.append((cluster, queue))
+                continue
+            opinion = next(queue, None)
+            if opinion is not None:
+                pairs.append((opinion, cluster))
+                still_going.append((cluster, queue))
+        queues = still_going
     return pairs
 
 
@@ -277,7 +303,18 @@ def _build_cluster_plot_data(
         {
             "x": float(x),
             "y": float(y),
+            # The map layout (see _cluster_results.html) plots these instead
+            # of x/y when the opinion has one; null when it doesn't, so that
+            # layout simply skips it rather than guessing a placement.
+            "lat": opinion.geo_coordinates.y if opinion.geo_coordinates else None,
+            "lon": opinion.geo_coordinates.x if opinion.geo_coordinates else None,
             "text": opinion.text,
+            # Grouped/coloured by cluster identity (topic_id), not by label
+            # text: two distinct clusters can end up with the same c-TF-IDF
+            # label (see topic_labels.py), and merging them by text would
+            # under-count the topics actually plotted relative to
+            # "clusters_found" above them on the page.
+            "topic_id": cluster.pk,
             "topic": cluster.label or f"topic {cluster.evoc_id}",
             "author": opinion.author.username if opinion.author_id else None,
             "sentiment": opinion.sentiment,
@@ -304,11 +341,15 @@ def _build_cluster_plot_data(
             "min_y": center_y - radius,
             "max_y": center_y + radius,
         },
-        # One entry per topic present, for Chart.js to turn into one
-        # dataset each (which is also what draws the legend).
+        # One entry per distinct cluster present (by id, see the "topic_id"
+        # comment above), for Chart.js to turn into one dataset each (which
+        # is also what draws the legend).
         "topics": [
-            {"name": topic, "color": _topic_color(topic)}
-            for topic in sorted({point["topic"] for point in points})
+            {"id": topic_id, "name": name, "color": _topic_color(name)}
+            for topic_id, name in sorted(
+                {point["topic_id"]: point["topic"] for point in points}.items(),
+                key=lambda pair: pair[1],
+            )
         ],
     }
     if query_coord is not None:
