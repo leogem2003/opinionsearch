@@ -16,6 +16,7 @@ from pgvector.django import CosineDistance
 
 from .embedding import embed_text
 from .models import Opinion
+from .sentiment import score_text
 
 # pgvector stores embeddings as float4, so a vector's distance from itself
 # can land a hair above 0 instead of exactly 0. Padding the requested max
@@ -85,11 +86,16 @@ def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
       rows for the same reason -- ``opinions.projection`` plots the query
       itself next to its matches, and shouldn't need to re-embed the query
       text to do that when only the UMAP sliders changed.
+    - ``query_sentiment``: the query's own 1-5 sentiment score (see
+      ``opinions.sentiment.score_text``), cached for the same reason as
+      ``query_embedding`` -- the /search page shows it too, and a UMAP-only
+      reload shouldn't re-score the same query text.
     """
     key = _search_cache_key(query, max_distance)
     cached = cache.get(key)
     if cached is None:
         query_embedding = embed_text(query)
+        query_sentiment = score_text(query)
         opinions = search_opinions(
             query, max_distance, query_embedding=query_embedding
         ).select_related("author")
@@ -106,7 +112,11 @@ def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
             }
             for opinion in opinions
         ]
-        cached = {"rows": rows, "query_embedding": query_embedding}
+        cached = {
+            "rows": rows,
+            "query_embedding": query_embedding,
+            "query_sentiment": query_sentiment,
+        }
         cache.set(key, cached, SEARCH_CACHE_TTL)
     return cached
 
