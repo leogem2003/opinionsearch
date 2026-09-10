@@ -1,9 +1,18 @@
-"""The current contribution pipeline: original text -> embedding, sentiment, topics -> search."""
+"""Recomputing an opinion's derived data when its text is edited.
 
+``Opinion.save()`` only fills embedding/sentiment/predefined topics *once*,
+on creation (see its docstring in models.py) -- editing already-analysed
+text does not, by design, silently redo expensive model calls on every save.
+Editing an opinion's own text through ``opinions/users.py``'s "my opinions"
+page is the one place that *should* redo them, explicitly: the user asked to
+regenerate everything, not just change a string. ``reanalyze_opinion`` is
+that explicit path.
+"""
+
+from .clustering import reassign_to_nearest_clusters
 from .embedding import embed_text
-from .models import Opinion
 from .sentiment import score_text
-from . import topic_classification
+from .topic_classification import classify_topics
 
 
 class EmbeddingUnavailable(Exception):
@@ -18,45 +27,30 @@ class TopicsUnavailable(Exception):
     pass
 
 
-def index_contribution(contribution):
-    """Index an explicitly public source, safely repeatable by a future worker.
+def reanalyze_opinion(opinion, text):
+    """Recompute embedding, sentiment and predefined topics for edited text.
 
-    Inference runs outside the write transaction. Racing retries can compute
-    the same embedding, but the unique source link permits only one opinion.
-    Predefined topic IDs are estimated; no author, stance or reason is invented.
+    Mirrors what ``Opinion.save()`` does for a brand new row, but forced
+    rather than guarded by "only if still empty", and followed by
+    ``reassign_to_nearest_clusters`` (rather than the plain, add-only
+    ``assign_to_nearest_clusters``) since this opinion may already belong to
+    clusters picked for its *previous* text.
     """
-    if contribution.publication != "public":
-        raise ValueError("Only public contributions can enter opinion search")
-    existing = Opinion.objects.filter(contribution=contribution).first()
-    if existing is not None:
-        if not existing.topic_analysis:
-            try:
-                topic_classification.assign_topics(existing)
-            except Exception as exc:
-                raise TopicsUnavailable from exc
-        return existing
+    opinion.text = text
     try:
-        embedding = embed_text(contribution.text)
+        opinion.embedding = embed_text(text)
     except Exception as exc:
         raise EmbeddingUnavailable from exc
     try:
-        sentiment = score_text(contribution.text)
+        opinion.sentiment = score_text(text)
     except Exception as exc:
         raise SentimentUnavailable from exc
     try:
-        topic_ids, topic_analysis = topic_classification.classify_topics(
-            contribution.text, embedding
+        opinion.topic_ids, opinion.topic_analysis = classify_topics(
+            text, opinion.embedding
         )
     except Exception as exc:
         raise TopicsUnavailable from exc
-    opinion, _ = Opinion.objects.get_or_create(
-        contribution=contribution,
-        defaults={
-            "text": contribution.text,
-            "embedding": embedding,
-            "sentiment": sentiment,
-            "topic_ids": topic_ids,
-            "topic_analysis": topic_analysis,
-        },
-    )
+    opinion.save()
+    reassign_to_nearest_clusters(opinion)
     return opinion

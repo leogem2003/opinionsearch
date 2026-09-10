@@ -44,9 +44,13 @@ query_sentiment, query_sentiment_label, sentiment_labels.
         <div class="opinion-detail-meta">
           <span class="understanding-badge" id="opinion-topic"></span>
           <span class="opinion-sentiment-badge" id="opinion-sentiment"></span>
+          <span class="opinion-detail-categories" id="opinion-categories"></span>
         </div>
         <blockquote id="opinion-text"></blockquote>
-        <p class="search-source-reference">by <span id="opinion-author"></span></p>
+        <div class="opinion-detail-footer">
+          <p class="search-source-reference">by <span id="opinion-author"></span></p>
+          <a class="civic-text-button" id="opinion-arguments-link" href="#" hidden>See arguments &rarr;</a>
+        </div>
       </div>
       <p class="atlas-chart-note">Dot positions show similarity (topic map) or a fictional demo location (geographic map); neither measures agreement with the topic.</p>
     </section>
@@ -77,9 +81,17 @@ query_sentiment, query_sentiment_label, sentiment_labels.
       </div>
     </header>
     {% for item in results %}
-      <article class="opinion-reason-row search-opinion-row" data-reveal-item>
+      <article class="opinion-reason-row search-opinion-row search-result-row" data-reveal-item>
         <p>{{ item.text }}</p>
-        <p class="search-source-reference">by {{ item.author|default:"anonymous" }} &middot; {{ item.date|date:"j M Y" }}</p>
+        <div class="opinion-row-meta">
+          {% if item.sentiment %}<span class="opinion-sentiment-badge">{{ item.sentiment_label }} ({{ item.sentiment }}/5)</span>{% endif %}
+          {% for category in item.topics %}<span class="understanding-badge opinion-category-badge">{{ category.title }}</span>{% endfor %}
+        </div>
+        <p class="search-source-reference">
+          by {% if item.author_id %}<a href="/users/{{ item.author_id }}/">{{ item.author }}</a>{% else %}anonymous{% endif %}
+          &middot; {{ item.date|date:"j M Y" }}
+          {% if item.author_id %}&middot; <a class="civic-text-button" href="/users/{{ item.author_id }}/#opinion-{{ item.id }}">See arguments{% if item.argument_count %} ({{ item.argument_count }}){% endif %} &rarr;</a>{% endif %}
+        </p>
       </article>
     {% endfor %}
     <button type="button" class="civic-text-button" data-reveal-trigger hidden>Show more &rarr;</button>
@@ -117,11 +129,36 @@ query_sentiment, query_sentiment_label, sentiment_labels.
         document.getElementById('opinion-topic').textContent =
           point.is_query ? 'Your search query' : point.topic;
         document.getElementById('opinion-text').textContent = point.text;
-        document.getElementById('opinion-author').textContent = point.is_query
-          ? '(this is what you typed, not a stored opinion)'
-          : (point.author || 'anonymous');
         document.getElementById('opinion-sentiment').textContent =
           point.sentiment_label + ' (' + point.sentiment + '/5)';
+
+        var categoriesEl = document.getElementById('opinion-categories');
+        categoriesEl.innerHTML = '';
+        (point.categories || []).forEach(function (category) {
+          var badge = document.createElement('span');
+          badge.className = 'understanding-badge opinion-category-badge';
+          badge.textContent = category.title;
+          categoriesEl.appendChild(badge);
+        });
+
+        var authorEl = document.getElementById('opinion-author');
+        var argumentsLink = document.getElementById('opinion-arguments-link');
+        if (point.is_query) {
+          authorEl.textContent = '(this is what you typed, not a stored opinion)';
+          argumentsLink.hidden = true;
+        } else if (point.author_id) {
+          authorEl.innerHTML = '';
+          var authorLink = document.createElement('a');
+          authorLink.href = '/users/' + point.author_id + '/';
+          authorLink.textContent = point.author || 'anonymous';
+          authorEl.appendChild(authorLink);
+          argumentsLink.href = '/users/' + point.author_id + '/#opinion-' + point.id;
+          argumentsLink.textContent = 'See arguments' + (point.argument_count ? ' (' + point.argument_count + ')' : '') + ' →';
+          argumentsLink.hidden = false;
+        } else {
+          authorEl.textContent = point.author || 'anonymous';
+          argumentsLink.hidden = true;
+        }
         document.getElementById('opinion-detail').hidden = false;
       }
 

@@ -19,6 +19,17 @@ from .projection import (
 )
 from .search import embed_query_cached
 from .sentiment import SENTIMENT_LABELS, sentiment_label
+from .topic_classification import TOPICS
+
+
+def _civic_topics(opinion):
+    """Predefined civic categories this opinion matched, as {id, title} dicts.
+
+    Independent of the discovered EVōC cluster it was matched through -- see
+    CLAUDE.md's note that the two systems don't map onto each other.
+    """
+    return [topic for topic in TOPICS if topic["id"] in opinion.topic_ids]
+
 
 # A little headroom around the plot's centre point, so the single farthest
 # point doesn't sit exactly on the edge -- see _build_cluster_plot_data.
@@ -198,7 +209,9 @@ def _opinions_for_clusters(clusters, limit=SEARCH_LIMIT, date_from=None, date_to
     """
     queues = []
     for cluster in clusters:
-        members = cluster.opinions.select_related("author")
+        members = cluster.opinions.select_related("author").prefetch_related(
+            "arguments"
+        )
         if date_from is not None:
             members = members.filter(timestamp__date__gte=date_from)
         if date_to is not None:
@@ -259,10 +272,14 @@ def _cluster_results_context(
             "id": opinion.pk,
             "text": opinion.text,
             "author": opinion.author.username if opinion.author_id else None,
+            "author_id": opinion.author_id,
             "date": opinion.timestamp,
             # Not shown in the list itself (see the template) -- only read
             # client-side to count the sentiment bar chart's bars.
             "sentiment": opinion.sentiment,
+            "sentiment_label": sentiment_label(opinion.sentiment),
+            "topics": _civic_topics(opinion),
+            "argument_count": len(opinion.arguments.all()),
         }
         for opinion, _ in pairs
     ]
@@ -316,9 +333,18 @@ def _build_cluster_plot_data(
             # "clusters_found" above them on the page.
             "topic_id": cluster.pk,
             "topic": cluster.label or f"topic {cluster.evoc_id}",
+            "id": opinion.pk,
             "author": opinion.author.username if opinion.author_id else None,
+            "author_id": opinion.author_id,
             "sentiment": opinion.sentiment,
             "sentiment_label": sentiment_label(opinion.sentiment),
+            # Predefined civic categories (opinions/topic_classification.py),
+            # independent of "topic"/"topic_id" above, which are the
+            # *discovered* EVōC cluster this point was matched through --
+            # see CLAUDE.md's note that the two systems don't map onto each
+            # other.
+            "categories": _civic_topics(opinion),
+            "argument_count": len(opinion.arguments.all()),
         }
         for (opinion, cluster), x, y in zip(pairs, xs, ys)
     ]

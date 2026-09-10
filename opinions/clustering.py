@@ -161,6 +161,26 @@ def assign_to_nearest_clusters(opinion, max_distance=DEFAULT_ASSIGNMENT_MAX_DIST
     return assigned
 
 
+def reassign_to_nearest_clusters(opinion, max_distance=DEFAULT_ASSIGNMENT_MAX_DISTANCE):
+    """Drop ``opinion``'s current memberships and re-run ``assign_to_nearest_clusters``.
+
+    ``assign_to_nearest_clusters`` only ever adds -- called from
+    ``Opinion.save()`` on a brand new row, it never has anything to remove.
+    Editing an existing opinion's text is different: its embedding changes,
+    so its old memberships (picked for the *previous* text) would otherwise
+    linger alongside whatever the new text is assigned to. This clears them
+    first, decrementing each old cluster's denormalised ``size`` by one to
+    match, then reassigns from scratch.
+    """
+    old_clusters = list(opinion.clusters.all())
+    opinion.clusters.clear()
+    if old_clusters:
+        Cluster.objects.filter(pk__in=[c.pk for c in old_clusters]).update(
+            size=F("size") - 1
+        )
+    return assign_to_nearest_clusters(opinion, max_distance=max_distance)
+
+
 def layer_count():
     """How many layers deep the stored hierarchy is (0 if never clustered)."""
     deepest = Cluster.objects.aggregate(models.Max("layer"))["layer__max"]

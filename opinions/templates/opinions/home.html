@@ -39,7 +39,22 @@
       <div class="civic-composer">
         <form method="post" action="/#share-issue" data-busy-label="Sending…">
           {% csrf_token %}
-          <input type="hidden" name="submission_key" value="{{ submission_key }}">
+          {% if current_user %}
+            <p class="civic-composer-hint">Posting as <strong>{{ current_user.username }}</strong></p>
+          {% else %}
+            <fieldset class="civic-identity-fields">
+              <legend>Before your first opinion, tell us who you are</legend>
+              <label for="username">Your name
+                <input type="text" id="username" name="username" maxlength="150" required value="{{ username }}" placeholder="How should others see you?">
+              </label>
+              <div class="civic-location-picker">
+                <p>Click your approximate location on the map</p>
+                <div id="identity-map" class="civic-identity-map"></div>
+                <input type="hidden" id="lat" name="lat">
+                <input type="hidden" id="lon" name="lon">
+              </div>
+            </fieldset>
+          {% endif %}
           <textarea
             id="issue-message"
             name="text"
@@ -106,7 +121,47 @@
         {% endif %}
       </div>
       <a class="civic-text-button" href="/topics/">Explore opinions <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg></a>
+      <a class="civic-text-button" href="{% url 'opinions:browse' %}">Browse by category &rarr;</a>
+      {% if current_user %}<a class="civic-text-button" href="/users/{{ current_user.uuid }}/">My opinions &rarr;</a>{% endif %}
     </section>
   </div>
 </main>
+{% endblock %}
+
+{% block extra_head %}
+  {% if not current_user %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  {% endif %}
+{% endblock %}
+
+{% block extra_body %}
+  {% if not current_user %}
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+      (function () {
+        var mapEl = document.getElementById('identity-map');
+        var latInput = document.getElementById('lat');
+        var lonInput = document.getElementById('lon');
+        if (!mapEl) return;
+        // scrollWheelZoom off: this small picker sits inline in a normally
+        // scrolling page, so a mouse wheel over it should scroll the page,
+        // not zoom the map -- the +/- controls (still enabled) handle zoom.
+        var map = L.map('identity-map', { scrollWheelZoom: false }).setView([20, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 18,
+        }).addTo(map);
+        var marker = null;
+        map.on('click', function (event) {
+          latInput.value = event.latlng.lat;
+          lonInput.value = event.latlng.lng;
+          if (marker) {
+            marker.setLatLng(event.latlng);
+          } else {
+            marker = L.marker(event.latlng).addTo(map);
+          }
+        });
+      })();
+    </script>
+  {% endif %}
 {% endblock %}

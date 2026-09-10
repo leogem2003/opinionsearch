@@ -108,9 +108,9 @@ def _opinion_rows(matches, has_query):
     return [
         {
             "id": item.pk,
-            "contribution_id": item.contribution_id,
             "text": item.text,
             "author": item.author.username if item.author_id else None,
+            "author_id": item.author_id,
             "distance": float(item.distance) if has_query else None,
             "similarity": 1 - float(item.distance) if has_query else None,
             "sentiment": item.sentiment,

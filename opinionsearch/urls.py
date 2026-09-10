@@ -18,9 +18,10 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
-from opinions.contributions import contribution_detail, submit_issue
 from opinions.legal import privacy_policy, terms
+from opinions.submissions import submit_issue
 from opinions.topics import topic_detail, topics_browse
+from opinions.users import add_argument, edit_argument, edit_opinion, user_opinions
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -28,10 +29,21 @@ urlpatterns = [
     path("", submit_issue, name="home"),
     path("topics/", topics_browse, name="topics"),
     path("topics/<str:topic_id>/", topic_detail, name="topic-detail"),
+    path("users/<uuid:user_uuid>/", user_opinions, name="user-opinions"),
     path(
-        "contributions/<str:contribution_id>/",
-        contribution_detail,
-        name="contribution-detail",
+        "users/<uuid:user_uuid>/opinions/<int:opinion_id>/edit/",
+        edit_opinion,
+        name="edit-opinion",
+    ),
+    path(
+        "users/<uuid:user_uuid>/opinions/<int:opinion_id>/arguments/add/",
+        add_argument,
+        name="add-argument",
+    ),
+    path(
+        "users/<uuid:user_uuid>/opinions/<int:opinion_id>/arguments/<int:argument_id>/edit/",
+        edit_argument,
+        name="edit-argument",
     ),
     path("privacy-policy/", privacy_policy, name="privacy-policy"),
     path("terms-and-conditions/", terms, name="terms"),

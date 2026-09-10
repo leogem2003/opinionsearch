@@ -63,6 +63,19 @@ same way `load_senator_tweets --seed` does; only the date range's anchor point
 ("now") legitimately moves between runs, since the point is to always look
 recent, not frozen at first use.
 
+## Sample arguments
+
+Neither the hand-written fixture nor `load_senator_tweets` includes arguments
+(the `Argument` model), so `/users/<uuid>/` has nothing to show for a freshly
+loaded corpus. Fill it in with:
+```bash
+uv run python manage.py add_sample_arguments
+```
+This adds 1-3 generic argument texts to every existing Opinion, drawn
+deterministically from a small fixed pool (`--seed`, default `42`, the same
+reproducibility convention as `add_fictional_geo_time`). Pass `--only-missing`
+to only add arguments to opinions that don't have any yet.
+
 ## Develop without Docker
 
 The backend needs Python with `uv`, GDAL/GEOS/PROJ, and PostgreSQL with PostGIS
@@ -79,7 +92,7 @@ database and API. Real-model checks live in one opt-in integration folder.
 
 ```text
 opinions/tests/
-├── test_frontend.py     # submission, receipts, retries and search contracts
+├── test_frontend.py     # submission, identity cookies, editing and search contracts
 ├── test_topics.py       # topic decisions, browsing and backfill
 ├── test_admin.py        # admin field protections
 ├── integration/

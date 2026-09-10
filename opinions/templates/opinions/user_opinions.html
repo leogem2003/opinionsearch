@@ -1,0 +1,78 @@
+{% extends "opinions/base.html" %}
+{% block title %}{{ profile_user.username }} — HiveMind{% endblock %}
+{% block page_variant %}exploration-shell{% endblock %}
+{% block content %}
+<main class="exploration-container exploration-main topic-page" id="main-content">
+  <nav class="page-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">&rsaquo;</span><span aria-current="page">{{ profile_user.username }}</span></nav>
+  <header class="topic-heading">
+    <p class="topic-dataset">{% if is_owner %}Your opinions{% else %}Public opinions{% endif %}</p>
+    <h1>{{ profile_user.username }}</h1>
+    <p>
+      {{ opinions|length }} opinion{{ opinions|length|pluralize }}
+      {% if is_owner %} &middot; only you can see the edit and argument forms below{% endif %}
+    </p>
+  </header>
+
+  {% if opinions %}
+    <section class="user-opinion-list">
+      {% for opinion in opinions %}
+        <article class="user-opinion-row" id="opinion-{{ opinion.id }}">
+          <div class="opinion-row-meta">
+            {% if opinion.sentiment %}<span class="opinion-sentiment-badge">{{ opinion.sentiment_label }} ({{ opinion.sentiment }}/5)</span>{% endif %}
+            {% for category in opinion.topics %}<span class="understanding-badge opinion-category-badge">{{ category.title }}</span>{% endfor %}
+            <span class="search-source-reference">{{ opinion.timestamp|date:"j M Y" }}</span>
+          </div>
+
+          {% if is_owner %}
+            <form method="post" action="/users/{{ profile_user.uuid }}/opinions/{{ opinion.id }}/edit/" class="user-opinion-edit-form" data-busy-label="Saving…">
+              {% csrf_token %}
+              <label class="civic-sr-only" for="text-{{ opinion.id }}">Opinion text</label>
+              <textarea id="text-{{ opinion.id }}" name="text" rows="3" data-autogrow>{% if error_opinion_id == opinion.id %}{{ error_text }}{% else %}{{ opinion.text }}{% endif %}</textarea>
+              <div class="civic-composer-actions">
+                <span class="civic-composer-hint">Saving regenerates the embedding, sentiment, category and topic membership.</span>
+                <button class="civic-button" type="submit">Save changes</button>
+              </div>
+            </form>
+            {% if error_opinion_id == opinion.id and error %}<p class="civic-error" role="alert">{{ error }}</p>{% endif %}
+          {% else %}
+            <p class="user-opinion-text">{{ opinion.text }}</p>
+          {% endif %}
+
+          <div class="user-opinion-arguments">
+            <h3>Arguments</h3>
+            {% for argument in opinion.arguments %}
+              <div class="user-argument-row">
+                {% if is_owner %}
+                  <form method="post" action="/users/{{ profile_user.uuid }}/opinions/{{ opinion.id }}/arguments/{{ argument.id }}/edit/" data-busy-label="Saving…">
+                    {% csrf_token %}
+                    <label class="civic-sr-only" for="argument-{{ argument.id }}">Argument text</label>
+                    <textarea id="argument-{{ argument.id }}" name="text" rows="2" data-autogrow>{{ argument.text }}</textarea>
+                    <button class="civic-text-button" type="submit">Save &rarr;</button>
+                  </form>
+                {% else %}
+                  <p>{{ argument.text }}</p>
+                {% endif %}
+              </div>
+            {% empty %}
+              <p class="opinion-search-note">No arguments yet.</p>
+            {% endfor %}
+            {% if is_owner %}
+              <form method="post" action="/users/{{ profile_user.uuid }}/opinions/{{ opinion.id }}/arguments/add/" class="user-argument-add-form" data-busy-label="Adding…">
+                {% csrf_token %}
+                <label class="civic-sr-only" for="new-argument-{{ opinion.id }}">Add an argument</label>
+                <textarea id="new-argument-{{ opinion.id }}" name="text" rows="2" placeholder="Add a supporting argument" data-autogrow></textarea>
+                <button class="civic-button" type="submit">Add argument</button>
+              </form>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+  {% else %}
+    <div class="search-no-results" role="status">
+      <h2>No opinions yet</h2>
+      {% if is_owner %}<a class="civic-text-button" href="/#share-issue">Share an issue &rarr;</a>{% endif %}
+    </div>
+  {% endif %}
+</main>
+{% endblock %}
