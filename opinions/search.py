@@ -52,7 +52,7 @@ def search_opinions(query, max_distance=DEFAULT_MAX_DISTANCE, query_embedding=No
     )
 
 
-SEARCH_CACHE_TTL = 300  # seconds
+SEARCH_CACHE_TTL = 5  # seconds TODO: Only cache query's embedding, not the whole search
 
 
 def _search_cache_key(query, max_distance):

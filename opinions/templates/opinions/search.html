@@ -22,7 +22,7 @@
         <input type="text" id="query" name="query" value="{{ query }}" size="60">
     </p>
     <p>
-        <label for="max_distance">Max cosine distance ({{ max_distance }}):</label>
+        <label for="max_distance">Max distance/scale ({{ max_distance }}):</label>
         <input type="range" id="max_distance" name="max_distance"
                min="0" max="1" step="0.01" value="{{ max_distance }}"
                oninput="document.getElementById('max_distance_output').textContent = this.value">
