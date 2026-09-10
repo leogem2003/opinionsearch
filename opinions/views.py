@@ -10,16 +10,11 @@ from .projection import (
     project_2d,
 )
 from .search import parse_max_distance, search_opinions_cached
-from .sentiment import sentiment_label
+from .sentiment import SENTIMENT_LABELS, sentiment_label
 
-# The plot is an inline SVG in the template; these define its coordinate
-# space (viewBox) and how far points are kept from the edges. Drawing the
-# query's star marker itself (turning a center point into a polygon) is left
-# to the template/JS -- see search.html's starPoints() -- since it's pure
-# presentation, not something derived from the data.
-PLOT_WIDTH = 760
-PLOT_HEIGHT = 520
-PLOT_PADDING = 24
+# A little headroom around the query on the scatter chart's axes, so the
+# single farthest point doesn't sit exactly on the edge -- see _build_plot_data.
+AXIS_PADDING_FACTOR = 1.1
 
 # Fixed, tab10-like palette. A topic maps onto one of these by hashing its
 # name (see _topic_color) rather than by position in this request's result
@@ -39,15 +34,19 @@ TOPIC_PALETTE = [
 
 
 def search(request):
-    """Render the search page: results list, plus a 2D plot of their embeddings.
+    """Render the search page: results list, a sentiment histogram, and a
+    2D plot of the results' embeddings.
 
     The query lives in ``opinions.search`` (cached on ``(query,
     max_distance)`` so that retuning the UMAP sliders below doesn't re-embed
-    the query or rescan the vector index -- see
+    or re-score the query, or rescan the vector index -- see
     ``search.search_opinions_cached``), and the projection lives in
-    ``opinions.projection``. This view is just request parsing, calling
-    both, and laying the projected points (including the query itself) out
-    in the SVG's coordinate space.
+    ``opinions.projection``. Both charts are drawn client-side by Chart.js
+    (see search.html) from JSON this view embeds via the ``json_script``
+    template filter -- this view's job is fetching that data and, for the
+    scatter chart, turning embeddings into 2D coordinates; Chart.js handles
+    pixel placement, the query's star marker, legends, tooltips and
+    click-to-select, none of which needs computing by hand here.
     """
     query = request.GET.get("query", "").strip()
     max_distance = parse_max_distance(request.GET.get("max_distance"))
@@ -55,19 +54,22 @@ def search(request):
     min_dist = parse_min_dist(request.GET.get("min_dist"))
 
     results = []
-    points = []
-    query_point = None
-    topics = []
+    plot_data = None
+    query_sentiment = None
+    query_sentiment_label = None
     too_few_to_plot = False
 
     if query:
         cached = search_opinions_cached(query, max_distance)
         rows = cached["rows"]
+        query_sentiment = cached["query_sentiment"]
+        query_sentiment_label = sentiment_label(query_sentiment)
+
         # Drop each row's embedding for the plain-text results list below --
-        # it's only needed for the projection, computed separately. Add the
-        # sentiment label here rather than storing it on the row: it's a
-        # display concern derived from the stored 1-5 score, same as
-        # "similarity" is derived from "distance".
+        # it's only needed for the projection, computed separately below.
+        # The sentiment label is added here rather than stored on the row:
+        # it's a display concern derived from the stored 1-5 score, the same
+        # way "similarity" is derived from "distance".
         results = [
             {
                 **{k: v for k, v in row.items() if k != "embedding"},
@@ -77,10 +79,15 @@ def search(request):
         ]
 
         if len(rows) >= MIN_POINTS_TO_PROJECT:
-            points, query_point = _project_points(
-                rows, cached["query_embedding"], n_neighbors, min_dist
+            plot_data = _build_plot_data(
+                query,
+                rows,
+                cached["query_embedding"],
+                query_sentiment,
+                query_sentiment_label,
+                n_neighbors,
+                min_dist,
             )
-            topics = sorted({row["topic"] for row in rows})
         else:
             too_few_to_plot = bool(rows)
 
@@ -93,30 +100,35 @@ def search(request):
             "n_neighbors": n_neighbors,
             "min_dist": min_dist,
             "results": results,
-            "points": points,
-            "query_point": query_point,
-            "topics": [
-                {"name": topic, "color": _topic_color(topic)} for topic in topics
-            ],
+            "plot_data": plot_data,
+            "query_sentiment": query_sentiment,
+            "query_sentiment_label": query_sentiment_label,
+            "sentiment_labels": SENTIMENT_LABELS,
             "too_few_to_plot": too_few_to_plot,
             "min_points_to_plot": MIN_POINTS_TO_PROJECT,
-            "plot_width": PLOT_WIDTH,
-            "plot_height": PLOT_HEIGHT,
         },
     )
 
 
-def _project_points(rows, query_embedding, n_neighbors, min_dist):
-    """Project ``rows``' embeddings and the query to 2D, centered on the query.
+def _build_plot_data(
+    query,
+    rows,
+    query_embedding,
+    query_sentiment,
+    query_sentiment_label,
+    n_neighbors,
+    min_dist,
+):
+    """Project ``rows``' embeddings and the query to 2D for Chart.js's scatter chart.
 
     UMAP's axes carry no absolute meaning on their own, so nothing is lost by
-    choosing our own origin and scale for the plot rather than the usual
-    min/max-to-viewBox mapping: centering on the query -- what was actually
-    searched for -- puts it in the middle of the picture, with every match
-    laid out around it at a screen distance that (loosely; a 2D projection is
-    lossy) tracks its distance from the query. One scale is used for both
-    axes so that those screen distances stay comparable in x and y, rather
-    than each axis being stretched independently to fill the plot.
+    leaving pixel placement to Chart.js (search.html): this only returns the
+    projection's own (x, y) coordinates -- one dict per point Chart.js can
+    use directly as a data point, extra keys riding along for its tooltip
+    and click handler -- plus an axis range that keeps the chart centered on
+    the query rather than on the result set's bounding box, with the same
+    radius applied to both axes so Chart.js's square aspect ratio renders
+    them at one true scale instead of two independently stretched ones.
     """
     coords, query_coord = project_2d(
         [row["embedding"] for row in rows],
@@ -125,38 +137,49 @@ def _project_points(rows, query_embedding, n_neighbors, min_dist):
         min_dist=min_dist,
     )
     xs, ys = coords[:, 0], coords[:, 1]
+    query_x, query_y = float(query_coord[0]), float(query_coord[1])
 
-    radius = max(np.abs(xs - query_coord[0]).max(), np.abs(ys - query_coord[1]).max())
-    radius = radius or 1.0
-    scale = (min(PLOT_WIDTH, PLOT_HEIGHT) / 2 - PLOT_PADDING) / radius
+    points = [
+        {
+            "x": float(x),
+            "y": float(y),
+            "text": row["text"],
+            "topic": row["topic"],
+            "author": row["author"],
+            "similarity": row["similarity"],
+            "sentiment": row["sentiment"],
+            "sentiment_label": sentiment_label(row["sentiment"]),
+        }
+        for row, x, y in zip(rows, xs, ys)
+    ]
 
-    def to_screen(x, y):
-        return (
-            PLOT_WIDTH / 2 + (x - query_coord[0]) * scale,
-            # SVG y grows downward; flipped to match the notebook's plots.
-            PLOT_HEIGHT / 2 - (y - query_coord[1]) * scale,
-        )
+    # float(...) here, not just on the pieces above: numpy's .max() returns a
+    # numpy scalar (float32), which json_script's json.dumps can't serialize
+    # -- unlike the coordinates above, nothing downstream converts this one.
+    radius = float(max(np.abs(xs - query_x).max(), np.abs(ys - query_y).max()) or 1.0)
+    radius *= AXIS_PADDING_FACTOR
 
-    points = []
-    for row, x, y in zip(rows, xs, ys):
-        screen_x, screen_y = to_screen(x, y)
-        points.append(
-            {
-                "text": row["text"],
-                "topic": row["topic"],
-                "author": row["author"],
-                "similarity": row["similarity"],
-                "sentiment": row["sentiment"],
-                "sentiment_label": sentiment_label(row["sentiment"]),
-                "color": _topic_color(row["topic"]),
-                "x": screen_x,
-                "y": screen_y,
-            }
-        )
-
-    query_x, query_y = to_screen(*query_coord)
-    query_point = {"x": query_x, "y": query_y}
-    return points, query_point
+    return {
+        "points": points,
+        "query_point": {
+            "x": query_x,
+            "y": query_y,
+            "is_query": True,
+            "text": query,
+            "sentiment": query_sentiment,
+            "sentiment_label": query_sentiment_label,
+        },
+        "axis_range": {
+            "min_x": query_x - radius,
+            "max_x": query_x + radius,
+            "min_y": query_y - radius,
+            "max_y": query_y + radius,
+        },
+        "topics": [
+            {"name": topic, "color": _topic_color(topic)}
+            for topic in sorted({row["topic"] for row in rows})
+        ],
+    }
 
 
 def _topic_color(topic):

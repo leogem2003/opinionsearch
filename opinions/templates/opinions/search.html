@@ -1,17 +1,11 @@
 <title>Search opinions</title>
 
 <style>
-    /* Minimal, only what's needed to make the plot and its interactions legible. */
-    .plot-marker { cursor: pointer; stroke: #fff; stroke-width: 1; }
-    .plot-marker:hover { stroke: #000; stroke-width: 1.5; }
-    .plot-marker.selected { stroke: #d62728; stroke-width: 2.5; }
-    .query-marker { fill: #000; stroke-width: 1.5; }
-    #plot-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.5rem 0; font-size: 0.9em; }
-    #plot-legend span.swatch { display: inline-block; width: 0.8em; height: 0.8em; border-radius: 50%; margin-right: 0.3em; vertical-align: middle; }
-    #plot-legend svg.star-swatch { vertical-align: middle; margin-right: 0.3em; }
+    /* Minimal, only what's needed to make the charts and their interactions legible. */
+    #sentiment-chart-wrapper { position: relative; max-width: 32em; height: 260px; margin: 0.5rem 0; }
+    #scatter-chart-wrapper { position: relative; max-width: 46em; margin: 0.5rem 0; }
     #opinion-detail { border: 1px solid #ccc; padding: 0.6rem 0.8rem; margin-top: 0.5rem; max-width: 40em; }
     #opinion-detail p { margin: 0.2em 0; }
-    svg#plot { border: 1px solid #ccc; }
 </style>
 
 <h1>Search opinions</h1>
@@ -52,47 +46,19 @@
 {% if query %}
     <h2>Results for &ldquo;{{ query }}&rdquo;</h2>
 
+    {% if query_sentiment %}
+        <p>Your query's sentiment: {{ query_sentiment_label }} ({{ query_sentiment }}/5)</p>
+    {% endif %}
+
     {% if results %}
-        {% if points %}
+        <h3>Sentiment distribution</h3>
+        <p>The highlighted bar is your query's own sentiment.</p>
+        <div id="sentiment-chart-wrapper"><canvas id="sentiment-chart"></canvas></div>
+
+        {% if plot_data %}
             <h3>Projection</h3>
-            <p>The plot is centered on your query (&#9733;); its closest matches land nearest to it.</p>
-            <p id="plot-legend">
-                {% if query_point %}
-                    <span>
-                        <svg class="star-swatch" width="14" height="14" viewBox="0 0 14 14">
-                            <polygon class="star-shape" fill="#000"
-                                     data-cx="7" data-cy="7" data-outer-r="6" data-inner-r="2.5"></polygon>
-                        </svg>your query
-                    </span>
-                {% endif %}
-                {% for topic in topics %}
-                    <span><span class="swatch" style="background:{{ topic.color }}"></span>{{ topic.name }}</span>
-                {% endfor %}
-            </p>
-            <svg id="plot" width="{{ plot_width }}" height="{{ plot_height }}"
-                 viewBox="0 0 {{ plot_width }} {{ plot_height }}">
-                {% for point in points %}
-                    <circle class="opinion-dot plot-marker" r="6" cx="{{ point.x }}" cy="{{ point.y }}"
-                            fill="{{ point.color }}"
-                            data-text="{{ point.text }}"
-                            data-topic="{{ point.topic }}"
-                            data-author="{{ point.author }}"
-                            data-similarity="{{ point.similarity|floatformat:4 }}"
-                            data-sentiment="{{ point.sentiment_label }} ({{ point.sentiment|default:'?' }}/5)"
-                            onclick="showOpinion(this)"></circle>
-                {% endfor %}
-                {% if query_point %}
-                    <polygon class="query-marker plot-marker star-shape"
-                             data-cx="{{ query_point.x }}" data-cy="{{ query_point.y }}"
-                             data-outer-r="12" data-inner-r="5"
-                             data-text="{{ query }}"
-                             data-topic="Your search query"
-                             data-author="(this is what you typed, not a stored opinion)"
-                             data-similarity="1.0000"
-                             data-sentiment="n/a &mdash; not a stored opinion"
-                             onclick="showOpinion(this)"></polygon>
-                {% endif %}
-            </svg>
+            <p>The plot is centered on your query (the star marker); its closest matches land nearest to it.</p>
+            <div id="scatter-chart-wrapper"><canvas id="scatter-chart"></canvas></div>
             <div id="opinion-detail" hidden>
                 <p><strong id="opinion-topic"></strong></p>
                 <p id="opinion-text"></p>
@@ -113,43 +79,132 @@
                 </li>
             {% endfor %}
         </ul>
+
+        {{ results|json_script:"results-data" }}
+        {% if plot_data %}{{ plot_data|json_script:"plot-data" }}{% endif %}
+        {{ sentiment_labels|json_script:"sentiment-labels-data" }}
+        {{ query_sentiment|json_script:"query-sentiment-data" }}
+
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+        <script>
+            (function () {
+                function readJSON(id) {
+                    var el = document.getElementById(id);
+                    return el ? JSON.parse(el.textContent) : null;
+                }
+
+                var results = readJSON('results-data') || [];
+                var plotData = readJSON('plot-data');
+                var sentimentLabels = readJSON('sentiment-labels-data') || {};
+                var querySentiment = readJSON('query-sentiment-data');
+
+                function showOpinion(point) {
+                    document.getElementById('opinion-topic').textContent =
+                        point.is_query ? 'Your search query' : point.topic;
+                    document.getElementById('opinion-text').textContent = point.text;
+                    document.getElementById('opinion-author').textContent = point.is_query
+                        ? '(this is what you typed, not a stored opinion)'
+                        : point.author;
+                    document.getElementById('opinion-similarity').textContent = point.is_query
+                        ? 'n/a'
+                        : point.similarity.toFixed(4);
+                    document.getElementById('opinion-sentiment').textContent =
+                        point.sentiment_label + ' (' + point.sentiment + '/5)';
+                    document.getElementById('opinion-detail').hidden = false;
+                }
+
+                // --- Sentiment distribution: a bar per 1-5 score, counted from
+                // the current results; the bar matching the query's own score
+                // (if any) is drawn in a different colour. ---
+                var counts = [0, 0, 0, 0, 0];
+                results.forEach(function (r) {
+                    if (r.sentiment) counts[r.sentiment - 1]++;
+                });
+                new Chart(document.getElementById('sentiment-chart'), {
+                    type: 'bar',
+                    data: {
+                        labels: [1, 2, 3, 4, 5].map(function (s) {
+                            return s + ' (' + sentimentLabels[s] + ')';
+                        }),
+                        datasets: [{
+                            label: 'opinions',
+                            data: counts,
+                            backgroundColor: [1, 2, 3, 4, 5].map(function (s) {
+                                return s === querySentiment ? '#d62728' : '#1f77b4';
+                            }),
+                        }],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+                    },
+                });
+
+                // --- Projection: one dataset per topic (Chart.js draws the
+                // legend and per-topic colouring for free) plus a starred
+                // dataset for the query itself. ---
+                if (plotData) {
+                    var datasets = plotData.topics.map(function (topic) {
+                        return {
+                            label: topic.name,
+                            backgroundColor: topic.color,
+                            data: plotData.points.filter(function (p) { return p.topic === topic.name; }),
+                        };
+                    });
+                    datasets.push({
+                        label: 'your query',
+                        // Chart.js draws "star" as strokes, not a filled
+                        // shape, so its colour comes from border*, not
+                        // backgroundColor (set anyway, for the legend swatch).
+                        backgroundColor: '#000',
+                        borderColor: '#000',
+                        borderWidth: 2,
+                        pointStyle: 'star',
+                        pointRadius: 10,
+                        pointHoverRadius: 12,
+                        data: [plotData.query_point],
+                    });
+
+                    var scatterChart = new Chart(document.getElementById('scatter-chart'), {
+                        type: 'scatter',
+                        data: { datasets: datasets },
+                        options: {
+                            responsive: true,
+                            aspectRatio: 1,
+                            // UMAP's axes carry no absolute meaning, so only
+                            // their range (centered on the query -- see
+                            // opinions/views.py::_build_plot_data) matters,
+                            // not their tick labels.
+                            scales: {
+                                x: { min: plotData.axis_range.min_x, max: plotData.axis_range.max_x, display: false },
+                                y: { min: plotData.axis_range.min_y, max: plotData.axis_range.max_y, display: false },
+                            },
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        title: function () { return ''; },
+                                        label: function (context) {
+                                            var d = context.raw;
+                                            var label = d.is_query ? 'your query' : d.topic;
+                                            var text = d.text.length > 50 ? d.text.slice(0, 50) + '…' : d.text;
+                                            return label + ': ' + text;
+                                        },
+                                    },
+                                },
+                            },
+                            onClick: function (event, elements) {
+                                if (!elements.length) return;
+                                var el = elements[0];
+                                showOpinion(scatterChart.data.datasets[el.datasetIndex].data[el.index]);
+                            },
+                        },
+                    });
+                }
+            })();
+        </script>
     {% else %}
         <p>No opinions found in that range.</p>
     {% endif %}
 {% endif %}
-
-<script>
-    // Turns a center point + two radii into the "points" attribute for a
-    // 5-point SVG <polygon> star. Purely a drawing detail -- the backend
-    // only ever hands the template a center (see .star-shape below), never
-    // polygon geometry.
-    function starPoints(cx, cy, outerR, innerR) {
-        var coords = [];
-        for (var i = 0; i < 10; i++) {
-            var angle = Math.PI / 2 + (i * Math.PI) / 5;
-            var r = i % 2 === 0 ? outerR : innerR;
-            coords.push((cx + r * Math.cos(angle)).toFixed(1) + ',' + (cy - r * Math.sin(angle)).toFixed(1));
-        }
-        return coords.join(' ');
-    }
-
-    document.querySelectorAll('.star-shape').forEach(function (star) {
-        star.setAttribute('points', starPoints(
-            +star.dataset.cx, +star.dataset.cy, +star.dataset.outerR, +star.dataset.innerR
-        ));
-    });
-
-    function showOpinion(circle) {
-        document.getElementById('opinion-topic').textContent = circle.dataset.topic;
-        document.getElementById('opinion-text').textContent = circle.dataset.text;
-        document.getElementById('opinion-author').textContent = circle.dataset.author;
-        document.getElementById('opinion-similarity').textContent = circle.dataset.similarity;
-        document.getElementById('opinion-sentiment').textContent = circle.dataset.sentiment;
-        document.getElementById('opinion-detail').hidden = false;
-
-        document.querySelectorAll('.plot-marker.selected').forEach(function (marker) {
-            marker.classList.remove('selected');
-        });
-        circle.classList.add('selected');
-    }
-</script>
