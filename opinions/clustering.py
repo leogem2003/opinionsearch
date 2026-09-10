@@ -32,6 +32,8 @@ doesn't wait for it: ``assign_to_nearest_clusters`` (called from
 supersedes rather than depends on.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+
 import evoc
 import numpy as np
 from django.db import models, transaction
@@ -182,21 +184,40 @@ def _labels_for(layers, texts):
 
 
 def _create_clusters(layers, labels, opinions, embeddings):
-    """Create one Cluster row per (layer, id), with centroid, size and exemplar."""
+    """Create one Cluster row per (layer, id), with centroid, size and exemplar.
+
+    EVōC's own fit already uses every core (its numba routines default to
+    one thread per core); the one loop left running on a single core was
+    this one. Finding each cluster's medoid is otherwise independent
+    per-cluster work, so it's farmed out to a thread pool -- plain numpy
+    matrix multiplication (inside ``medoid_index``) releases the GIL while it
+    runs, so real cores are used, without a process pool's cost of pickling
+    the embedding arrays across process boundaries.
+    """
+    members_by_key = {
+        (layer_index, int(cluster_id)): np.flatnonzero(layer == cluster_id)
+        for layer_index, layer in enumerate(layers)
+        for cluster_id in sorted(set(layer[layer >= 0].tolist()))
+    }
+    keys = list(members_by_key)
+
+    with ThreadPoolExecutor() as pool:
+        medoids = pool.map(
+            lambda key: medoid_index(embeddings[members_by_key[key]]), keys
+        )
+
     clusters = {}
-    for layer_index, layer in enumerate(layers):
-        for cluster_id in sorted(set(layer[layer >= 0].tolist())):
-            members = np.flatnonzero(layer == cluster_id)
-            member_embeddings = embeddings[members]
-            exemplar = opinions[members[medoid_index(member_embeddings)]]
-            clusters[(layer_index, cluster_id)] = Cluster(
-                layer=layer_index,
-                evoc_id=int(cluster_id),
-                label=labels.get((layer_index, cluster_id), ""),
-                centroid=member_embeddings.mean(axis=0).tolist(),
-                size=len(members),
-                exemplar=exemplar,
-            )
+    for key, medoid in zip(keys, medoids):
+        layer_index, cluster_id = key
+        members = members_by_key[key]
+        clusters[key] = Cluster(
+            layer=layer_index,
+            evoc_id=cluster_id,
+            label=labels.get(key, ""),
+            centroid=embeddings[members].mean(axis=0).tolist(),
+            size=len(members),
+            exemplar=opinions[members[medoid]],
+        )
     Cluster.objects.bulk_create(clusters.values())
     return clusters
 
