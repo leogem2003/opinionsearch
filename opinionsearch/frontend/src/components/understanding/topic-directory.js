@@ -1,15 +1,16 @@
 import { EXAMPLE_TOPICS, EXAMPLE_DISCUSSIONS } from './discussion-examples.js'
 import { sortDiscussions } from './discussion-sorting.js'
+import { requestJSON } from './api.js'
 
-// Provider boundary for a future discussion API. UI examples never enter public counts.
-// Discussion records need: id, topicId, title, createdAt, lastContributionAt,
-// contributionCount. Topic assignment and aggregation belong to the future pipeline.
-export async function loadTopicDirectory(dataset) {
+// The public catalogue comes from stored backend assignments. Examples remain
+// a separate provider with nested discussions and never enter public counts.
+export async function loadTopicDirectory(dataset, { signal } = {}) {
   if (dataset === 'demo') return EXAMPLE_TOPICS.map(topic => ({ ...topic,
     discussions: EXAMPLE_DISCUSSIONS.filter(discussion => discussion.topicId === topic.id),
   }))
-  // Public discussion data will get its own backend contract later.
-  return []
+  const result = await requestJSON('/api/v1/topics/', { signal })
+  if (!Array.isArray(result.topics) || result.topics.some(topic => typeof topic.id !== 'string' || typeof topic.title !== 'string' || !Number.isInteger(topic.opinionCount))) throw new Error('Invalid topic directory')
+  return result.topics
 }
 
 export function directoryView(topics, { query = '', sort } = {}) {

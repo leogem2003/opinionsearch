@@ -15,6 +15,8 @@ from .projection import (
 )
 from .search import parse_max_distance, search_opinions, search_opinions_cached
 from .sentiment import SENTIMENT_LABELS, sentiment_label
+from .models import Opinion
+from .topic_classification import TOPIC_IDS, TOPICS
 
 # A little headroom around the query on the scatter chart's axes, so the
 # single farthest point doesn't sit exactly on the edge -- see _build_plot_data.
@@ -35,16 +37,28 @@ def search_api(request):
     UMAP and query sentiment computation on the existing HTML search page.
     """
     query = request.GET.get("query", "").strip()
+    topic = request.GET.get("topic", "")
+    if topic and topic not in TOPIC_IDS | {"unassigned"}:
+        return JsonResponse({"error": {"message": "Unknown topic."}}, status=400)
     if len(query) > 2000 or "\0" in query:
         return JsonResponse(
             {"error": {"message": "Use a search of at most 2,000 characters."}},
             status=400,
         )
     results = []
-    if query:
-        matches = search_opinions(
-            query, parse_max_distance(request.GET.get("max_distance"))
-        )[:SEARCH_LIMIT]
+    if query or topic:
+        matches = (
+            search_opinions(query, parse_max_distance(request.GET.get("max_distance")))
+            if query
+            else Opinion.objects.order_by("-timestamp", "-pk")
+        )
+        if topic:
+            matches = (
+                matches.filter(topic_ids=[])
+                if topic == "unassigned"
+                else matches.filter(topic_ids__contains=[topic])
+            )
+        matches = matches[:SEARCH_LIMIT]
         results = [
             {
                 "id": str(item.pk),
@@ -53,10 +67,17 @@ def search_api(request):
                 ),
                 "text": item.text,
                 "topic": item.topic,
-                "distance": float(item.distance),
-                "similarity": 1 - float(item.distance),
+                "distance": float(item.distance) if query else None,
+                "similarity": 1 - float(item.distance) if query else None,
                 "sentiment": item.sentiment,
                 "sentimentLabel": sentiment_label(item.sentiment),
+                "topics": [
+                    {"id": assigned["id"], "title": assigned["title"]}
+                    for assigned in TOPICS
+                    if assigned["id"] in item.topic_ids
+                ],
+                "topicAnalysis": item.topic_analysis,
+                "createdAt": item.timestamp.isoformat(),
             }
             for item in matches
         ]

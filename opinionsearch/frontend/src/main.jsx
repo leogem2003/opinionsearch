@@ -6,6 +6,7 @@ import './index.css'
 
 const LegalPage = lazy(() => import('./components/legal/LegalPage'))
 const TopicIndexPage = lazy(() => import('./components/understanding/TopicIndexPage'))
+const TopicOpinionsPage = lazy(() => import('./components/understanding/TopicOpinionsPage'))
 const DiscussionPage = lazy(() => import('./components/understanding/DiscussionPage'))
 const ContributionPage = lazy(() => import('./components/understanding/ContributionPage'))
 
@@ -14,8 +15,8 @@ const topicMatch = path.match(/^\/topics\/([a-z0-9-]+)$/)
 const discussionMatch = path.match(/^\/discussions\/([a-z0-9-]+)$/)
 const contributionMatch = path.match(/^\/contributions\/([A-Za-z0-9_-]{1,128})$/)
 
-// Old broad-topic links now open their group in the topic index.
-if (topicMatch) {
+// Legacy example-topic links open their group in the example index.
+if (topicMatch && new URLSearchParams(window.location.search).get('dataset') === 'demo') {
   const dataset = new URLSearchParams(window.location.search).get('dataset') === 'demo' ? 'demo' : 'public'
   window.history.replaceState(null, '', topicIndexURL(dataset, topicMatch[1]))
   path = '/topics'
@@ -52,6 +53,7 @@ if (legalDoc && path !== LEGAL_CANONICAL[legalDoc] && window.history?.replaceSta
 function Root() {
   if (path === '/') return <LandingPage />
   if (path === '/topics') return <TopicIndexPage />
+  if (topicMatch) return <TopicOpinionsPage topicId={topicMatch[1]} />
   if (discussionMatch) return <DiscussionPage discussionId={discussionMatch[1]} />
   if (contributionMatch) return <ContributionPage contributionId={contributionMatch[1]} />
   if (legalDoc) {

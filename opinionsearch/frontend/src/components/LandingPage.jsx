@@ -4,6 +4,7 @@ import { issueTextError, saveReceipt, submissionKey, topicIndexURL } from './und
 import { loadTopicDirectory } from './understanding/topic-directory'
 import { contributionDemo, createContribution } from './understanding/contributions'
 import OpinionSearch from './understanding/OpinionSearch'
+import PublicTopicDirectory from './understanding/PublicTopicDirectory'
 import './landing-page.css'
 
 function ArrowIcon() {
@@ -199,7 +200,7 @@ function TopicBrowser() {
         </div>}
       </header>
       <div className="civic-dataset-switch" role="group" aria-label="Topic dataset"><button type="button" aria-pressed={dataset === 'public'} onClick={() => updateBrowse('public', '')}>Opinions</button><button type="button" aria-pressed={dataset === 'demo'} onClick={() => updateBrowse('demo', '')}>Example data</button></div>
-      {dataset === 'public' ? <OpinionSearch initialQuery={query} /> : <>
+      {dataset === 'public' ? <OpinionSearch initialQuery={query}><PublicTopicDirectory compact /></OpinionSearch> : <>
       <p className="civic-dataset-note">Illustrative discussions and contributions.</p>
       <p className="civic-sr-only" role="status">{status === 'ready' ? `${matches.length} topics found` : status === 'error' ? 'Topics could not be loaded' : 'Loading topics'}</p>
       <div className="civic-topic-content" aria-busy={status === 'loading'}>

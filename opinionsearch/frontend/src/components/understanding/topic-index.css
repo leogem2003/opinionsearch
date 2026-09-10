@@ -26,3 +26,13 @@
   .directory-discussions { padding-inline: 16px; }
   .directory-discussions p { gap: 3px 6px; }
 }
+.public-topic-directory { margin-top: 26px; }
+.public-directory-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.public-directory-heading h2 { margin: 0; color: var(--civic-ink); font: 400 1.65rem/1.3 Georgia, serif; }
+.public-directory-heading select { max-width: 100%; padding: 10px 12px; border: 1px solid var(--civic-line); border-radius: var(--control-radius); color: var(--civic-ink); background: #fff; font: inherit; font-size: .85rem; }
+.public-topic-list { padding: 0 22px; border: 1px solid var(--civic-line); border-radius: 8px; background: #fff; }
+.public-topic-note { margin-top: 14px; color: var(--civic-muted); font-size: .8rem; }
+.search-browse-return { margin-top: 14px; }
+.search-opinion-topics { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-block: 12px; font-size: .85rem; }
+.search-opinion-topics a { color: var(--civic-accent); }
+@media (max-width: 600px) { .public-directory-heading { align-items: flex-start; flex-direction: column; } .public-topic-list { padding-inline: 16px; } }

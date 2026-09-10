@@ -2,7 +2,7 @@
 
 **Version:** v1 prototype, 10 September 2026. **Status:** implemented by the frontend client and OpinionSearch's Django backend. The separate [opinion search API](SEARCH_API.md) is also connected.
 
-The website now uses **save original text → BGE-M3 embedding and sentiment score → linked searchable opinion → receipt**. This connects the existing embedding and sentiment models to submissions. Sentiment estimates tone; it does not establish agreement with a searched topic. It does not infer topics, positions or reasons, and needs no LLM, account or processing queue. Receipts remain private; text explicitly submitted as public becomes visible in opinion search.
+The website now uses **save original text → BGE-M3 embedding, sentiment and predefined topics → linked searchable opinion → receipt**. This connects the existing embedding and sentiment models to submissions. Sentiment estimates tone; it does not establish agreement with a searched topic. It estimates broad topics from a fixed catalogue; it does not extract positions or reasons, and needs no LLM, account or processing queue. Receipts remain private; text explicitly submitted as public becomes visible in opinion search.
 
 ## Resource names
 
@@ -66,11 +66,11 @@ Cache-Control: no-store
 - `searchable` is `true` after the linked embedding record is stored. Private submissions return `false`. The current form requires `true` before showing successful completion.
 - `accessToken` is an opaque, unguessable private receipt issued by the backend. It is not an account token. Its generation, storage and verification are backend implementation choices.
 
-The original source is committed before inference, so either model failing does not lose the text. The synchronous prototype returns success only when public input is indexed; failed embedding or sentiment inference returns 503 and retrying the same request resumes this step. The frontend allows up to 120 seconds for submission because the first model load can be slow. Other API calls retain their 20-second timeout.
+The original source is committed before inference, so either model failing does not lose the text. The synchronous prototype returns success only when public input is indexed; failed embedding, sentiment or topic inference returns 503 and retrying the same request resumes this step. The frontend allows up to 120 seconds for submission because the first model load can be slow. Other API calls retain their 20-second timeout.
 
 ### Retries and duplicate prevention
 
-An identical `submissionKey`, text and visibility return the **same contribution ID and usable receipt**, without creating another contribution or opinion. Return **200 OK** for that replay. Different text or visibility with an existing key returns **409 Conflict** and leaves the original unchanged. An already indexed contribution does not run either model again on replay.
+An identical `submissionKey`, text and visibility return the **same contribution ID and usable receipt**, without creating another contribution or opinion. Return **200 OK** for that replay. Different text or visibility with an existing key returns **409 Conflict** and leaves the original unchanged. An already indexed and topic-analysed contribution does not run inference again on replay. A replay of an older indexed contribution without topic analysis fills that missing step.
 
 This must survive concurrent retries and service restarts. It covers a lost response after a successful write. Keep the key confidential: replaying an identical request recovers its receipt. Identical text with a different key is a separate submission; this key is not a content-deduplication mechanism.
 
@@ -125,6 +125,7 @@ All API errors should use JSON:
 | 503 | `storage_unavailable` | Storage could not be confirmed; retry the same request and key. |
 | 503 | `embedding_unavailable` | The original text is saved, but embedding failed. Retry the same request and key to finish indexing. |
 | 503 | `sentiment_unavailable` | The original text is saved, but sentiment scoring failed. Retry the same request and key to finish indexing. |
+| 503 | `topics_unavailable` | The original text is saved, but topic classification failed. Retry the same request and key. |
 
 Do not echo private text or receipts in errors. An unsupported HTTP method should return 405. API routes should return JSON rather than the frontend HTML fallback.
 
@@ -140,7 +141,7 @@ The form preserves the input and key after a failed, timed-out or malformed resp
 6. Send empty, invalid or over-limit input: validation error, no contribution created.
 7. Send 2,000 valid Unicode code points: accepted even when the JSON representation is longer.
 8. Fail storage: no successful-save response is issued.
-9. Fail embedding or sentiment scoring: retain the source, return 503, and allow retry without duplicate sources or search records.
+9. Fail embedding, sentiment scoring or topic classification: retain the source, return 503, and allow retry without duplicate sources or search records.
 10. Submit “i like coffee” publicly: the existing BGE-M3 search finds it for “coffee” and includes its original contribution ID.
 11. Submit through a legacy private client: no embedding or search record is created, including after retries.
 
@@ -152,7 +153,7 @@ The PostgreSQL tests in [test_contributions.py](../../opinions/tests/test_contri
 
 The receipt itself is stored as a secret in the private table so identical retries can recover it after a lost response or restart. It is not a receipt hash or encrypted field. Database access and backups therefore include these credentials as well as the original text. Reads compare receipts in constant time. Neither read responses nor error messages include credentials, and these handlers do not log request bodies or authorization headers.
 
-A database uniqueness constraint resolves source retries. For public input, [index_contribution](../../opinions/pipeline.py) calls the existing `embed_text()` and `score_text()` functions outside the database write transaction, then creates an `Opinion` with the original text, vector and sentiment score. A unique `Opinion.contribution` link prevents duplicate search records. Simultaneous requests may compute model outputs more than once, but store one opinion. Anonymous input has no invented author, and its topic is blank until a classification step exists. Search exposes `contributionId` for provenance, never receipts or submission keys.
+A database uniqueness constraint resolves source retries. For public input, [index_contribution](../../opinions/pipeline.py) calls the existing `embed_text()` and `score_text()` functions outside the database write transaction, then classifies the vector against the predefined catalogue and creates an `Opinion` with the original text, vector, sentiment, topic IDs and classification metadata. A unique `Opinion.contribution` link prevents duplicate search records. Simultaneous requests may compute model outputs more than once, but store one opinion. Anonymous input has no invented author, and its legacy `topic` string stays blank. The new `topic_ids` array contains its estimated civic categories; `topic_analysis` records the decision. See [TOPIC_PIPELINE.md](TOPIC_PIPELINE.md). Search exposes `contributionId` for provenance, never receipts or submission keys.
 
 For higher throughput, move this repeatable indexing function into a durable background worker and add explicit processing status/retry scheduling. Do not start detached request threads or move inference into a database migration. The current whole-input, one-to-one representation is intentionally limited; later statement extraction can add multiple derived records without replacing the original source or its ID.
 
@@ -162,6 +163,6 @@ For higher throughput, move this repeatable indexing function into a durable bac
 - [contributions.js](src/components/understanding/contributions.js) is the API boundary. It checks required success fields before opening a saved-text page.
 - [LandingPage.jsx](src/components/LandingPage.jsx) submits the input; [ContributionPage.jsx](src/components/understanding/ContributionPage.jsx) reads it. The page route remains `/contributions/:id`.
 - `npm run dev:demo` uses tab-local demonstration records with prominent demo labels. It implements no server, database, durable guarantee or security boundary. Production builds use the real HTTP API and never silently fall back to this demo.
-- Topic/discussion examples remain separate fixtures. Public exploration can search existing backend opinions through [SEARCH_API.md](SEARCH_API.md); organised discussions and position analysis remain deferred. The former session/report frontend has been removed; it creates no additional API requirements.
+- Topic/discussion examples remain separate fixtures. Public exploration can search existing backend opinions through [SEARCH_API.md](SEARCH_API.md); predefined topics are now browsable, while discovered discussions and position analysis remain deferred. The former session/report frontend has been removed; it creates no additional API requirements.
 
 The later backend can add interpretations and discussion membership while keeping contribution IDs and original text stable. Specify editing/version history and publication transitions when those user actions are introduced. Embedding models, databases, queue technology and internal processing routes are deliberately left to the backend team.

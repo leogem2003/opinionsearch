@@ -11,7 +11,12 @@ from django.http import JsonResponse, UnreadablePostError
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import Contribution, Opinion
-from .pipeline import EmbeddingUnavailable, SentimentUnavailable, index_contribution
+from .pipeline import (
+    EmbeddingUnavailable,
+    SentimentUnavailable,
+    TopicsUnavailable,
+    index_contribution,
+)
 
 MAX_BODY_BYTES = 32 * 1024
 SUBMISSION_KEY = re.compile(r"[A-Za-z0-9_-]{32,128}")
@@ -112,6 +117,12 @@ def create_contribution(request):
             return error(
                 "sentiment_unavailable",
                 "Your text is saved, but sentiment scoring failed. Please retry.",
+                503,
+            )
+        except TopicsUnavailable:
+            return error(
+                "topics_unavailable",
+                "Your text is saved, but topic analysis failed. Please retry.",
                 503,
             )
         except DatabaseError:

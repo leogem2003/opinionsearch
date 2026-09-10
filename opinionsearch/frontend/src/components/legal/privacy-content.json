@@ -14,7 +14,7 @@
       "heading": "Your issue input",
       "paragraphs": [
         "In the development demo, the form is labelled “Demo”. Your text and its access receipt are saved in this browser tab’s session storage. The demo does not send your contribution to a server or provide lasting storage.",
-        "Outside demo mode, submitting the form makes your text publicly searchable. OpinionSearch stores your original words and uses an embedding to find related text and a model to estimate its sentiment. Sentiment describes tone, not agreement with a topic. Submissions previously saved as private remain private unless explicitly made public."
+        "Outside demo mode, submitting the form makes your text publicly searchable. OpinionSearch stores your original words and uses an embedding to find related text and models to estimate its sentiment and matching predefined topics. Sentiment describes tone, not agreement with a topic. Submissions previously saved as private remain private unless explicitly made public."
       ]
     },
     {

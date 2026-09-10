@@ -15,21 +15,22 @@ npm run dev:demo
 
 Open `http://localhost:5174`. This project uses a fixed development port and stops if it is occupied, rather than silently moving to another port. The input and saved-text page explicitly say **Demo**. Submitted text is stored only in the current browser tab's session storage. It does not reach a server or join the example discussions. This mode demonstrates the interaction; it is not durable storage or a security implementation.
 
-The **Opinions** tab on Home and Explore searches the OpinionSearch backend. The **Example data** option contains separate, hand-authored discussions and visualisations. Search opens a selectable Positive / Negative / Neutral sentiment overview with original opinions below it, using the example page’s visual style. Unscored results stay separate. Sentiment is tone, not agreement; automatic discussion grouping and topic-specific stance analysis remain deferred.
+The **Opinions** tab on Home and Explore searches the OpinionSearch backend. The **Example data** option contains separate, hand-authored discussions and visualisations. Search opens a selectable Positive / Negative / Neutral sentiment overview with original opinions below it, using the example page’s visual style. Unscored results stay separate. Sentiment is tone, not agreement; the live topic index groups opinions using an editable civic catalogue. Automatic discussion grouping and topic-specific stance analysis remain deferred.
 
 ## Page map
 
-The core journey is **Home → Topic index → Discussion → Original contribution**. Submitting from Home now runs embedding and sentiment scoring and opens the saved contribution with its private receipt; the submitted text becomes publicly searchable.
+The live journey is **Home → Topic index → Topic sentiment and original opinions**. The example journey additionally includes discussions and supporting reasons. Submitting from Home now runs embedding and sentiment scoring and opens the saved contribution with its private receipt; the submitted text becomes publicly searchable.
 
 | Route | Purpose |
 | --- | --- |
 | `/` | Describe an issue and preview topics. |
-| `/topics` | Search backend opinions, or browse and sort illustrative discussions under Example data. |
+| `/topics` | Search backend opinions or browse predefined topics; Example data retains illustrative discussions. |
+| `/topics/:id` | View sentiment and original public opinions assigned to a predefined topic. |
 | `/discussions/:id` | View positions, reasons and links to original contributions. Currently uses labelled examples. |
 | `/contributions/:id` | Reopen a submitted input with its receipt, or read an illustrative source contribution. |
 | `/privacy-policy`, `/terms-and-conditions` | Factual prototype privacy and scope information. |
 
-Old `/topics/:id` links open that topic's group in the index. Session codes on home links are ignored and removed from the URL. Session rooms, voting, common-ground generation, recommendations, reports and their APIs have been retired from this frontend; old report links show the unavailable-page view.
+Example-data `/topics/:id` links still open that topic’s group in the example index. Session codes on home links are ignored and removed from the URL. Session rooms, voting, common-ground generation, recommendations, reports and their APIs have been retired from this frontend; old report links show the unavailable-page view.
 
 ## Connect the backend
 
@@ -49,9 +50,13 @@ Vite forwards `/api` only when `OPINIONSEARCH_API_TARGET` is explicitly configur
 
 Search uses `GET /api/v1/opinions/?query=...`, reusing the backend's existing BGE-M3 search. Add opinions through Django admin or the backend's fixture loader to make them searchable; starting the containers does not seed opinions. The first model load may take longer than the client's timeout; retry after the backend finishes loading. [SEARCH_API.md](SEARCH_API.md) records this small read contract. After applying migrations to an existing database, run `docker compose run --rm web uv run python manage.py backfill_sentiment` to score opinions that predate the sentiment field. This leaves private contributions unchanged.
 
-The issue form uses the two contribution endpoints in [API_CONTRACT.md](API_CONTRACT.md). It states that submitted text will be publicly searchable and sends `publication: "public"`. The backend stores the original `Contribution`, runs the existing BGE-M3 embedding and sentiment functions, and creates one linked `Opinion` for search. Submitting “i like coffee” therefore makes it retrievable by searching “coffee”. No topic, stance or author is invented. Earlier private submissions keep their original visibility.
+The issue form uses the two contribution endpoints in [API_CONTRACT.md](API_CONTRACT.md). It states that submitted text will be publicly searchable and sends `publication: "public"`. The backend stores the original `Contribution`, runs the existing BGE-M3 embedding and sentiment functions, and creates one linked `Opinion` for search. Submitting “i like coffee” therefore makes it retrievable by searching “coffee”. Broad topic IDs come from the predefined catalogue; no stance, argument or author is invented. Earlier private submissions keep their original visibility.
 
 The client boundary is [contributions.js](src/components/understanding/contributions.js). The form sends text, a submission key and visibility; the saved-text page retrieves the original with its receipt. Both models currently run synchronously, with a 120-second submission timeout for cold model loading. An inference failure preserves the source and returns an error; retrying the same request finishes indexing without duplicate records. There is no background poll, classification form, editing or withdrawal control. This folder does not start a Django server or the separate HiveMind backend.
+
+## Topic classification
+
+The [topic pipeline](TOPIC_PIPELINE.md) describes the catalogue, decision rules and provenance record. New submissions are classified automatically. After updating an existing backend, run `docker compose run --rm web uv run python manage.py backfill_topics` to label earlier opinions. Update `opinions/topic_catalogue.json`, restart/rebuild the backend, then use `backfill_topics --all` to apply a changed catalogue. The command only processes public `Opinion` records; it does not publish private contributions.
 
 ## Build
 

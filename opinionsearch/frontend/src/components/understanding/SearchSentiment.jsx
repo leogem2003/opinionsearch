@@ -23,7 +23,7 @@ function DotCluster({ count }) {
   </svg>
 }
 
-export default function SearchSentiment({ results, query, limit }) {
+export default function SearchSentiment({ results, query, limit, topic }) {
   const headingId = useId()
   const readingId = useId()
   const [selected, setSelected] = useState('all')
@@ -36,8 +36,8 @@ export default function SearchSentiment({ results, query, limit }) {
     <section className="atlas-chart-panel" aria-labelledby={headingId}>
       <header className="atlas-chart-heading"><div>
         <p className="search-map-eyebrow">Opinion overview</p>
-        <h2 id={headingId}>Sentiment around “{query}”</h2>
-        <p>{results.length}{results.length === limit ? ` closest matches · limit ${limit}` : ` matching opinion${results.length === 1 ? '' : 's'}`}</p>
+        <h2 id={headingId}>{topic ? 'Sentiment overview' : `Sentiment around “${query}”`}</h2>
+        <p>{topic ? `${results.length < topic.opinionCount ? `${results.length} of ${topic.opinionCount}` : results.length} opinion${results.length === 1 ? '' : 's'}` : `${results.length}${results.length === limit ? ` closest matches · limit ${limit}` : ` matching opinion${results.length === 1 ? '' : 's'}`}`}</p>
       </div>{selected !== 'all' && <button className="atlas-reset" onClick={() => setSelected('all')}>All views</button>}</header>
       <div className="search-cluster-pair" role="group" aria-label="Filter by sentiment">
         {groups.slice(0, 2).map(group => <button key={group.id} className={`search-cluster-group${selected === group.id ? ' is-current' : ''}`} style={{ '--position-colour': group.colour }} aria-pressed={selected === group.id} disabled={!group.items.length} onClick={() => choose(group.id)}>
@@ -59,6 +59,8 @@ export default function SearchSentiment({ results, query, limit }) {
         <div className="opinion-reason-body">
           <p className="opinion-connection">{sentimentGroup(item.sentiment) === 'unscored' ? 'This opinion does not have a sentiment score yet.' : `Model sentiment score: ${item.sentiment}/5. This estimates the tone of the original text; it does not measure support for “${query}”.`}</p>
           <p className="search-source-reference">Opinion {item.id}{item.contributionId ? ` · Source ${item.contributionId}` : ''}</p>
+          {item.topics?.length > 0 && <nav className="search-opinion-topics" aria-label="Assigned topics">{item.topics.map(assigned => <a key={assigned.id} href={`/topics/${assigned.id}`}>{assigned.title} ↗</a>)}</nav>}
+          {item.topicAnalysis?.catalogueVersion && <p className="search-source-reference">Topics estimated from predefined descriptions · {item.topicAnalysis.catalogueVersion}</p>}
         </div>
       </details>)}
       {!visible.length && <p className="opinion-message">No opinions in this group.</p>}
@@ -69,6 +71,7 @@ export default function SearchSentiment({ results, query, limit }) {
       <p>The backend sentiment model assigns a score from 1 to 5: 1–2 are grouped as negative, 3 as neutral, and 4–5 as positive. Missing scores remain unanalysed. These are model estimates, not labels supplied by contributors.</p>
       <p>A positive or negative tone does not establish whether someone is in favour of the searched topic. Topic-specific stance and supporting reasons require a separate analysis step.</p>
       <p>Dots show group membership. Their positions within each group are for layout and do not measure similarity, strength of opinion or distance between people.</p>
+      <p>Topics are estimated by comparing each opinion’s embedding with a predefined catalogue. Several topics may match; weak matches remain unassigned. Topic matching is experimental and does not extract a position or supporting argument.</p>
     </div></details></footer>
   </section>
 }

@@ -37,6 +37,10 @@ def embedding(monkeypatch):
     monkeypatch.setattr("opinions.embedding.get_embedder", unexpected_model)
     monkeypatch.setattr("opinions.sentiment.get_sentiment_pipeline", unexpected_model)
     monkeypatch.setattr("opinions.pipeline.score_text", Mock(return_value=4))
+    monkeypatch.setattr(
+        "opinions.topic_classification.classify_topics",
+        Mock(return_value=(["housing"], {"method": "test"})),
+    )
     embed = Mock(return_value=VECTOR)
     monkeypatch.setattr("opinions.pipeline.embed_text", embed)
     return embed
@@ -331,6 +335,9 @@ def test_search_returns_indexed_input_with_source_id_but_no_credentials(
         "similarity",
         "sentiment",
         "sentimentLabel",
+        "topics",
+        "topicAnalysis",
+        "createdAt",
     }
     assert receipt["accessToken"] not in result.content.decode()
 
@@ -348,3 +355,22 @@ def test_sentiment_failure_keeps_source_and_retry_completes_it(client, monkeypat
     scorer.return_value = 4
     assert create(client).status_code == 200
     assert Opinion.objects.get(contribution=source).sentiment == 4
+
+
+@pytest.mark.django_db
+def test_topic_failure_preserves_source_and_retry_completes_it(client, monkeypatch):
+    classifier = Mock(side_effect=RuntimeError("Internal model details"))
+    monkeypatch.setattr("opinions.topic_classification.classify_topics", classifier)
+    response = create(client)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "topics_unavailable"
+    source = Contribution.objects.get()
+    assert not Opinion.objects.filter(contribution=source).exists()
+    classifier.side_effect = None
+    classifier.return_value = (["housing", "transport"], {"method": "test"})
+    assert create(client).status_code == 200
+    opinion = Opinion.objects.get(contribution=source)
+    assert opinion.topic_ids == ["housing", "transport"]
+    assert create(client).status_code == 200
+    assert Opinion.objects.filter(contribution=source).count() == 1
+    assert classifier.call_count == 2

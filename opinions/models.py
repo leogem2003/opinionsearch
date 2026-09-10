@@ -12,6 +12,8 @@ import uuid
 # django.contrib.gis.db.models re-exports the standard field types alongside the
 # geo ones, so this single import covers both.
 from django.contrib.gis.db import models
+from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from pgvector.django import HnswIndex, VectorField
 
 from .embedding import embed_text
@@ -74,6 +76,11 @@ class Opinion(models.Model):
 
     text = models.TextField()
     topic = models.CharField(max_length=200, blank=True)
+    # Fixed civic categories are independent of legacy labels and clusters.
+    topic_ids = ArrayField(
+        models.SlugField(max_length=40), default=list, blank=True, editable=False
+    )
+    topic_analysis = models.JSONField(default=dict, blank=True, editable=False)
     # One searchable representation per source in this prototype. The stable
     # source link preserves provenance and makes indexing retries idempotent.
     contribution = models.OneToOneField(
@@ -112,6 +119,7 @@ class Opinion(models.Model):
 
     class Meta:
         indexes = [
+            GinIndex(fields=["topic_ids"], name="opinion_topic_ids_gin"),
             # Cosine distance, matching how BGE-M3 embeddings are normally compared.
             HnswIndex(
                 name="opinion_embedding_hnsw",
@@ -119,7 +127,7 @@ class Opinion(models.Model):
                 m=16,
                 ef_construction=64,
                 opclasses=["vector_cosine_ops"],
-            )
+            ),
         ]
 
     def save(self, *args, **kwargs):
@@ -135,6 +143,16 @@ class Opinion(models.Model):
             self.embedding = embed_text(self.text)
         if self.sentiment is None and self.text:
             self.sentiment = score_text(self.text)
+        if (
+            self._state.adding
+            and not self.topic_analysis
+            and self.embedding is not None
+        ):
+            from .topic_classification import classify_topics
+
+            self.topic_ids, self.topic_analysis = classify_topics(
+                self.text, self.embedding
+            )
         super().save(*args, **kwargs)
 
     def __str__(self):

@@ -21,7 +21,7 @@
       "id": "current-scope",
       "heading": "What is still being developed",
       "paragraphs": [
-        "Submissions pass through an embedding model for related-text search and a sentiment model for the Positive, Negative and Neutral overview. Sentiment estimates tone, not support for the searched topic. Automatic topic organisation and position or reason analysis are not implemented yet, and submissions are not added to the example charts.",
+        "Submissions pass through an embedding model for related-text search and a sentiment model for the Positive, Negative and Neutral overview. Sentiment estimates tone, not support for the searched topic. Predefined topics are estimated automatically. Discussion discovery and position or reason analysis are not implemented yet, and submissions are not added to the example charts.",
         "Operator details, contact information and policies for a public deployment remain to be established."
       ]
     }

@@ -4,6 +4,7 @@ import { dateLabel, discussionURL } from './api'
 import { DISCUSSION_SORTS, discussionSort } from './discussion-sorting'
 import { directoryView, loadTopicDirectory } from './topic-directory'
 import OpinionSearch from './OpinionSearch'
+import PublicTopicDirectory from './PublicTopicDirectory'
 import './understanding.css'
 import './exploration.css'
 import './topic-index.css'
@@ -61,7 +62,7 @@ export default function TopicIndexPage() {
     <nav className="page-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">›</span><span aria-current="page">Topics</span></nav>
     <header className="topic-heading"><h1>{dataset === 'demo' ? 'Explore topics' : 'Explore opinions'}</h1></header>
     <div className="civic-dataset-switch" role="group" aria-label="Discussion dataset"><button aria-pressed={dataset === 'public'} onClick={() => chooseDataset('public')}>Opinions</button><button aria-pressed={dataset === 'demo'} onClick={() => chooseDataset('demo')}>Example data</button></div>
-    {dataset === 'public' ? <OpinionSearch initialQuery={query} /> : <>
+    {dataset === 'public' ? <OpinionSearch initialQuery={query}><PublicTopicDirectory /></OpinionSearch> : <>
     <p className="directory-example-note">Illustrative discussions and contributions.</p>
     <div className="directory-controls">
       <div><label htmlFor="directory-search">Search topics and discussions</label><input id="directory-search" type="search" value={query} onChange={event => { setQuery(event.target.value); update({ q: event.target.value }) }} placeholder="Find a discussion" /></div>
