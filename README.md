@@ -40,6 +40,17 @@ Run the tests:
 docker compose run --rm web uv run pytest
 ```
 
+## Notebooks
+[`notebooks/umap_projection.ipynb`](notebooks/umap_projection.ipynb) prototypes the 2D UMAP
+projection that the opinion-space visualization will be drawn from: it loads the sample
+opinions into the **development** database, runs the same query `/search/` runs
+(`opinions.search.search_opinions`, with the query text and the distance slider as its two
+knobs), and projects the matched embeddings.
+
+```bash
+uv run jupyter lab
+```
+
 ## Limitations
 1. Since this is a website, it is centralized and controlled by a single entity
 2. There is currently no bot protection implemented to prevent inauthentic behavior

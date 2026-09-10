@@ -18,6 +18,11 @@ dev = [
     "pytest-django>=4.8.0",
     "django-debug-toolbar>=4.3.0",
     "black>=24.0.0",
+    # For notebooks/umap_projection.ipynb: the 2D projection experiment that
+    # design.md's read path calls for. Not imported by the app itself yet.
+    "umap-learn>=0.5.6",
+    "matplotlib>=3.8",
+    "jupyterlab>=4.0",
 ]
 
 [tool.uv.sources]
