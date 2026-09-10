@@ -182,7 +182,7 @@ class Opinion(models.Model):
         ]
 
     def save(self, *args, **kwargs):
-        """Embed and score sentiment on first save (design.md write path, plus sentiment).
+        """Embed, score sentiment, and place into the topic hierarchy on first save.
 
         The opinion text is fed into BGE-M3 and into the sentiment model
         (opinions/sentiment.py); both results are stored directly on the
@@ -190,10 +190,16 @@ class Opinion(models.Model):
         embedded/scored opinion's text does not currently redo either.
 
         Predefined civic categories are assigned here for new opinions.
-        Discovered clusters are computed separately over the whole corpus --
-        see opinions/clustering.py and ``manage.py recluster``. A new opinion
-        has no discovered cluster memberships until the next clustering run.
+        A full re-clustering (opinions/clustering.py's ``cluster_opinions``,
+        run via ``manage.py recluster``) is a whole-corpus operation and far
+        too slow to run per save, so it does *not* happen here. Instead, once
+        the row exists, ``assign_to_nearest_clusters`` does a cheap
+        nearest-centroid lookup against whatever hierarchy already exists --
+        an approximation (it moves no centroids and creates no clusters) that
+        gives a newly published opinion a topic immediately rather than
+        leaving it unclustered until the next re-clustering run.
         """
+        is_new = self.pk is None
         if self.embedding is None and self.text:
             self.embedding = embed_text(self.text)
         if self.sentiment is None and self.text:
@@ -209,6 +215,13 @@ class Opinion(models.Model):
                 self.text, self.embedding
             )
         super().save(*args, **kwargs)
+        if is_new:
+            # Local import: opinions.clustering imports this module (for
+            # Cluster/Opinion), so importing it back at module level here
+            # would be a circular import.
+            from .clustering import assign_to_nearest_clusters
+
+            assign_to_nearest_clusters(self)
 
     def cluster_at(self, layer):
         """This opinion's cluster in ``layer``, or None if it was noise there."""

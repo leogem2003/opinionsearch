@@ -86,8 +86,12 @@ The opinion embedding is stored in the vector DB.
 The opinion text is also scored for sentiment.
 The vector ID is added to the opinion row.
 Predefined categories are assigned at submission time. Discovered clusters
-are updated separately with `manage.py recluster`, a whole-corpus operation.
-A new opinion has no discovered cluster memberships until that command runs.
+are updated separately with `manage.py recluster`, a whole-corpus operation:
+a topic is a property of the corpus, so the hierarchy is rediscovered in
+batch, not on every publish. In between batch runs, a new opinion is
+provisionally assigned to the nearest existing cluster (by centroid
+distance) in each layer, rather than left with no topic until the next full
+run.
 
 ### Browsing topics
 `GET /topics/` lists the fixed catalogue with stored membership counts and

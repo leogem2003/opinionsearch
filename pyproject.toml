@@ -17,6 +17,9 @@ dependencies = [
     # but declared directly since opinions/sentiment.py imports it itself.
     "transformers>=4.40",
     "evoc>=0.3.1",
+    # opinions/management/commands/load_senator_tweets.py, to pull the real
+    # sample corpus from the Hugging Face Hub.
+    "datasets>=2.19",
 ]
 
 [dependency-groups]

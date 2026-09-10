@@ -9,6 +9,8 @@ from functools import lru_cache
 
 from FlagEmbedding import FlagAutoModel
 
+from .text_cleaning import clean_for_embedding
+
 MODEL_NAME = "BAAI/bge-m3"
 
 
@@ -38,10 +40,16 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     Batching matters whenever more than one opinion needs embedding at once
     (e.g. loading a fixture of many statements): one ``encode_corpus`` call
     over the whole list is much cheaper than calling ``embed_text`` in a loop.
+
+    Each text is run through ``text_cleaning.clean_for_embedding`` first
+    (lowercased, stopwords/opinion filler dropped) -- generic words that say
+    nothing about topic mostly just add noise to the vector, so stripping
+    them before embedding is what actually separates clusters better; search
+    stays consistent with it for free, since a query is embedded the same way.
     """
     embedder = get_embedder()
     dense_vecs = embedder.encode_corpus(
-        texts,
+        [clean_for_embedding(text) for text in texts],
         return_dense=True,
         return_sparse=False,
         return_colbert_vecs=False,

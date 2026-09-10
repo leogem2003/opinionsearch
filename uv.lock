@@ -2778,6 +2778,7 @@ name = "opinionsearch"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "datasets" },
     { name = "django" },
     { name = "evoc" },
     { name = "flagembedding" },
@@ -2800,6 +2801,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "datasets", specifier = ">=2.19" },
     { name = "django", specifier = ">=5.0,<6.0" },
     { name = "evoc", specifier = ">=0.3.1" },
     { name = "flagembedding", git = "https://github.com/FlagOpen/FlagEmbedding.git" },
