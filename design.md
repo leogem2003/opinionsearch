@@ -37,8 +37,10 @@ The opinion embedding is stored in the vector DB.
 The opinion text is also scored for sentiment.
 The vector ID is added to the opinion row.
 Clusters are updated. This is a whole-corpus operation, not a per-opinion one:
-a topic is a property of the corpus, so the hierarchy is rediscovered in batch
-and a new opinion has no topic until that runs again.
+a topic is a property of the corpus, so the hierarchy is rediscovered in batch,
+not on every publish. In between batch runs, the new opinion is provisionally
+assigned to the nearest existing cluster (by centroid distance) in each layer,
+rather than left with no topic until the next full run.
 
 ### Searching for opinions
 An user inputs some keywords, maximum similarity distance [0,1] and optionally filters on time and location.
