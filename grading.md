@@ -1,6 +1,6 @@
 - [ ] comments
 - [ ] github
-- [ ] license
+- [x] license
 - [ ] presentation
 - [ ] demo
 
@@ -14,12 +14,14 @@ Q: User agreement/TOS
 - [ ] ~~Move js, cssgi out of html~~
 - [x] Implement clustering, extract topic foreach cluster ~~using fasttopic~~ -> set umap parameters based on clusters automatically
 - [x] where to get ~~~~smartvote data~~ from? => generate statements & arguments using python script
-  
+- [x] Make clustering use multiple cores
+- [ ] ~~automatically recluster, adjust cluster size~~
+- [x] normalize topic label capitalization, eliminate duplicates, improve stop words
 
 - [ ] Add sentiment input value [-1,1] (how much do I agree with statement), multiply by sentiment analysis on statement
-- [ ] Make clustering use multiple cores
-- [ ] ~~automatically recluster, adjust cluster size~~
-- [ ] normalize topic label capitalization, eliminate duplicates, improve stop words
+- [ ] Maybe (?) add negations for stop words like "hate"? TODO:
+- [ ] Filter my location, user, time
+
 
 - [ ] Move docker file to alpine linux, current setup looks like a mess (claude code -_-)
 - [ ] political (instead of) map for location selection
@@ -27,4 +29,3 @@ Q: User agreement/TOS
 
 ## Requirements
 - Neater UI
-
