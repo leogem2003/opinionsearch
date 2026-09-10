@@ -19,27 +19,10 @@ same ``label_clusters`` interface without anything else changing.
 import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer
 
+from .text_cleaning import STOP_WORDS
+
 # How many c-TF-IDF terms go into one label.
 TERMS_PER_LABEL = 3
-
-# Terms this corpus is made of -- they are what an *opinion* sounds like, not
-# what any one topic is about, so they characterise nothing. Added on top of
-# scikit-learn's English stop word list.
-OPINION_STOP_WORDS = [
-    "just",
-    "make",
-    "makes",
-    "need",
-    "needs",
-    "new",
-    "people",
-    "really",
-    "say",
-    "should",
-    "think",
-    "way",
-    "would",
-]
 
 
 def label_clusters(texts_by_cluster):
@@ -61,7 +44,7 @@ def label_clusters(texts_by_cluster):
     meta_documents = [" ".join(texts_by_cluster[key]) for key in keys]
 
     vectorizer = CountVectorizer(
-        stop_words=_stop_words(),
+        stop_words=list(STOP_WORDS),
         # Keep alphabetic words of 3+ characters: numbers and one-off
         # fragments make for noisy labels.
         token_pattern=r"(?u)\b[a-zA-Z][a-zA-Z-]{2,}\b",
@@ -116,15 +99,6 @@ def _c_tf_idf(counts):
         )
     )
     return term_frequency * inverse_frequency
-
-
-def _stop_words():
-    """scikit-learn's English stop words plus this corpus's own filler."""
-    # Importing the frozenset directly keeps this in step with whatever
-    # CountVectorizer(stop_words="english") would have used.
-    from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
-
-    return list(ENGLISH_STOP_WORDS.union(OPINION_STOP_WORDS))
 
 
 def medoid_index(embeddings):

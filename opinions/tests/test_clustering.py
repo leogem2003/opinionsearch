@@ -148,16 +148,15 @@ def test_publishing_an_opinion_assigns_it_without_a_recluster():
     statement's own cluster centroid -- is (numerically) identical to the
     original's, which is certain to be well inside it.
     """
-    source_text = STATEMENTS[3]["text"]
-    source = Opinion.objects.filter(text=source_text, clusters__isnull=False).first()
-    assert source is not None, "fixture sanity: expected this statement to be clustered"
+    source = Opinion.objects.filter(clusters__isnull=False).first()
+    assert source is not None, "fixture sanity: expected at least one clustered opinion"
     layer = source.clusters.first().layer
     cluster = source.cluster_at(layer)
 
     clusters_before = Cluster.objects.count()
     size_before = cluster.size
 
-    republished = Opinion.objects.create(text=source_text, author=source.author)
+    republished = Opinion.objects.create(text=source.text, author=source.author)
 
     # No re-clustering happened -- same clusters, just one more member.
     assert Cluster.objects.count() == clusters_before
