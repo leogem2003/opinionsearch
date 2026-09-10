@@ -94,7 +94,8 @@
                 <li>
                     {{ result.text }}
                     (similarity: {{ result.similarity|floatformat:4 }}, topic: {{ result.topic }},
-                    sentiment: {{ result.sentiment_label }} ({{ result.sentiment|default:"?" }}/5))
+                    sentiment: {{ result.sentiment_label }} ({{ result.sentiment|default:"?" }}/5),
+                    by {{ result.author|default:"anonymous" }})
                 </li>
             {% endfor %}
         </ul>

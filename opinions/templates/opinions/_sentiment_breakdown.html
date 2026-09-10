@@ -58,7 +58,7 @@ either `topic` (dict with title/opinionCount) or `query` (search text).
           <p class="opinion-connection">
             {% if item.sentiment_group == 'unscored' %}This opinion does not have a sentiment score yet.{% else %}Model sentiment score: {{ item.sentiment }}/5. This estimates the tone of the original text; it does not measure support for the searched topic.{% endif %}
           </p>
-          <p class="search-source-reference">Opinion {{ item.id }}{% if item.contribution_id %} &middot; Source {{ item.contribution_id }}{% endif %}</p>
+          <p class="search-source-reference">Opinion {{ item.id }}{% if item.contribution_id %} &middot; Source {{ item.contribution_id }}{% endif %} &middot; by {% if item.author %}{{ item.author }}{% else %}anonymous{% endif %}</p>
           {% if item.topics %}
             <nav class="search-opinion-topics" aria-label="Assigned topics">
               {% for assigned in item.topics %}<a href="/topics/{{ assigned.id }}/">{{ assigned.title }} &#8599;</a>{% endfor %}

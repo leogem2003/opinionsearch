@@ -106,6 +106,7 @@ def _opinion_rows(matches, has_query):
             "id": item.pk,
             "contribution_id": item.contribution_id,
             "text": item.text,
+            "author": item.author.username if item.author_id else None,
             "distance": float(item.distance) if has_query else None,
             "similarity": 1 - float(item.distance) if has_query else None,
             "sentiment": item.sentiment,
@@ -143,7 +144,7 @@ def _search_results(query, topic_param):
         search_opinions(query, DEFAULT_MAX_DISTANCE)
         if query
         else Opinion.objects.order_by("-timestamp", "-pk")
-    )
+    ).select_related("author")
     if topic_param:
         matches = (
             matches.filter(topic_ids=[])

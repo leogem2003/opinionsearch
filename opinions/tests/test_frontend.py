@@ -15,7 +15,7 @@ from django.db import DatabaseError, connections
 from django.test import Client
 from django.urls import reverse
 
-from opinions.models import Cluster, Contribution, Opinion
+from opinions.models import Cluster, Contribution, Opinion, User
 from opinions.pipeline import index_contribution
 
 KEY = "a" * 64
@@ -287,6 +287,7 @@ def test_search_returns_indexed_input_with_source_id_but_no_credentials(
         "id",
         "contribution_id",
         "text",
+        "author",
         "distance",
         "similarity",
         "sentiment",
@@ -296,6 +297,7 @@ def test_search_returns_indexed_input_with_source_id_but_no_credentials(
         "topics",
         "topic_analysis",
     }
+    assert match["author"] is None
     assert token not in result.content.decode()
 
 
@@ -342,6 +344,38 @@ def test_topics_browse_idle_shows_directory_without_embedding_a_query(
     assert response.status_code == 200
     assert response.context["results"] is None
     assert response.context["directory"]
+
+
+@pytest.mark.django_db
+def test_opinion_rows_show_the_publishing_users_username_or_anonymous(client):
+    author = User.objects.create(username="alex")
+    authored = Opinion.objects.create(
+        text="Housing needs more supply.",
+        embedding=VECTOR,
+        sentiment=4,
+        author=author,
+        topic_ids=["housing"],
+    )
+    anonymous = Opinion.objects.create(
+        text="An anonymous take on housing.",
+        embedding=VECTOR,
+        sentiment=3,
+        topic_ids=["housing"],
+    )
+
+    browse_rows = {
+        row["id"]: row["author"]
+        for row in client.get("/topics/", {"topic": "housing"}).context["results"]
+    }
+    assert browse_rows[authored.pk] == "alex"
+    assert browse_rows[anonymous.pk] is None
+
+    detail_rows = {
+        row["id"]: row["author"]
+        for row in client.get("/topics/housing/").context["results"]
+    }
+    assert detail_rows[authored.pk] == "alex"
+    assert detail_rows[anonymous.pk] is None
 
 
 @pytest.mark.django_db
