@@ -2,17 +2,11 @@
 
 ## Local startup
 
-`./run` runs the Django/PostgreSQL stack at `localhost:8000` and waits for readiness
-before opening Safari on macOS or the default browser on a Linux desktop. It
+`docker compose up --build` runs the Django/PostgreSQL stack at `localhost:8000`.
 prints the URL when no browser opener is available. `docker/app/serve.py` prepares
 embedding, sentiment and topic classification in the serving process before
 starting Django; failed preparation stops startup. Model downloads persist in a
-Docker volume. Source edits are mounted: restart with `./run --force-recreate`
-after Python/template changes, refresh after CSS/JavaScript changes, and use
-`./run --build` after dependency or image changes.
-Django serves the frontend directly as server-rendered HTML/CSS, with a little
-framework-free JavaScript for minor interactivity (no separate Node process or
-build step). Production hosting remains separate work.
+Docker volume. 
 
 ## Backend
 ### Databases

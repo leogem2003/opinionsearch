@@ -1,7 +1,7 @@
 # Local prototype: Django (server-rendered frontend + PostgreSQL).
 # The backend and database keep the same Nix environment as flake.lock.
 #
-#   ./run                             # website at http://localhost:8000
+#  docker compose up --build          # website at http://localhost:8000
 #   docker compose run --rm --entrypoint /app/.venv/bin/python web -m pytest
 services:
   db:

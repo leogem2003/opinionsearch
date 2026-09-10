@@ -20,10 +20,10 @@ except OSError:
 done
 
 echo "==> Applying migrations"
-.venv/bin/python manage.py migrate --noinput
+uv run manage.py migrate --noinput
 
 echo "==> Creating admin user if needed"
-.venv/bin/python manage.py shell << 'DJANGO_EOF'
+uv run manage.py shell << 'DJANGO_EOF'
 from django.contrib.auth.models import User
 if not User.objects.filter(username='admin').exists():
     User.objects.create_superuser('admin', 'admin@example.com', 'admin')
@@ -36,4 +36,4 @@ if [ "$#" -gt 0 ]; then
     exec "$@"
 fi
 
-exec .venv/bin/python -m docker.app.serve
+uv run -m docker.app.serve

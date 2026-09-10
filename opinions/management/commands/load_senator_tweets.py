@@ -35,9 +35,9 @@ DATASET_SPLIT = "train"
 # without an unreasonable load time on a CPU-only machine. BGE-M3 embeds at
 # roughly 1.5 texts/s on this project's own dev machine (no GPU available),
 # so the default is about 6 minutes end to end; --limit trades size for time.
-DEFAULT_LIMIT = 500
+DEFAULT_LIMIT = 1000
 DEFAULT_SEED = 42
-DEFAULT_MIN_LENGTH = 20
+DEFAULT_MIN_LENGTH = 15
 
 # Tweets are full of t.co link shorteners, which carry no text of their own
 # and would otherwise sit in the embedding as noise.
