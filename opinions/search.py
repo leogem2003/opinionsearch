@@ -5,9 +5,13 @@ vectors, then filter" -- that part is independent of HTTP, so it lives here
 and ``opinions.views.search`` is left with request parsing and rendering.
 Anything else that needs the same result set (notably
 ``notebooks/umap_projection.ipynb``, which projects the matched embeddings
-into 2D) can then run the query the page runs instead of a look-alike of it.
+into 2D, and ``opinions.projection``, which does the same for the /search
+page) can then run the query the page runs instead of a look-alike of it.
 """
 
+import hashlib
+
+from django.core.cache import cache
 from pgvector.django import CosineDistance
 
 from .embedding import embed_text
@@ -21,7 +25,7 @@ DISTANCE_EPSILON = 1e-4
 DEFAULT_MAX_DISTANCE = 0.5
 
 
-def search_opinions(query, max_distance=DEFAULT_MAX_DISTANCE):
+def search_opinions(query, max_distance=DEFAULT_MAX_DISTANCE, query_embedding=None):
     """Return opinions within ``max_distance`` cosine distance of ``query``.
 
     The query is embedded with the same (document) embedding function used
@@ -29,17 +33,78 @@ def search_opinions(query, max_distance=DEFAULT_MAX_DISTANCE):
     for an opinion's exact text reproduces its exact embedding -- see
     CLAUDE.md for why this doesn't yet use encode_queries.
 
+    ``query_embedding`` lets a caller that already has it (namely
+    ``search_opinions_cached``, which also needs it on its own to place the
+    query itself on the /search page's plot) skip embedding the same text
+    twice; by default it's computed here as before.
+
     Yields a lazy ``QuerySet`` of ``Opinion`` rows ordered nearest-first, each
     annotated with a ``distance`` attribute. Callers that only need the text
     (the view) and callers that need the vectors too (the projection
     notebook) therefore share one definition of "what matched".
     """
-    query_embedding = embed_text(query)
+    if query_embedding is None:
+        query_embedding = embed_text(query)
     return (
         Opinion.objects.annotate(distance=CosineDistance("embedding", query_embedding))
         .filter(distance__lte=max_distance + DISTANCE_EPSILON)
         .order_by("distance")
     )
+
+
+SEARCH_CACHE_TTL = 300  # seconds
+
+
+def _search_cache_key(query, max_distance):
+    # Hashed rather than interpolated directly: an arbitrary search query
+    # shouldn't end up embedded verbatim in a cache backend's key space.
+    digest = hashlib.sha256(f"{query}\x1f{max_distance:.6f}".encode()).hexdigest()
+    return f"opinions:search:{digest}"
+
+
+def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
+    """Same result as ``search_opinions``, but cached on ``(query, max_distance)``.
+
+    The /search page also lets the visitor retune the UMAP projection (see
+    ``opinions.projection``) without changing the query or the distance
+    slider -- that's a plain page reload with the same GET params for
+    ``query``/``max_distance``, so re-embedding the query and re-running the
+    CosineDistance scan on every such reload would be wasted work; only the
+    projection actually needs to change. Caching here (rather than around the
+    projection) is what makes that reload skip straight to reprojecting.
+
+    Returns a dict with:
+
+    - ``rows``: a list of plain dicts (id, text, topic, author, distance,
+      similarity, embedding) instead of ``search_opinions``'s lazy annotated
+      QuerySet, since a QuerySet can't survive a round trip through the cache.
+    - ``query_embedding``: the query's own embedding, cached alongside the
+      rows for the same reason -- ``opinions.projection`` plots the query
+      itself next to its matches, and shouldn't need to re-embed the query
+      text to do that when only the UMAP sliders changed.
+    """
+    key = _search_cache_key(query, max_distance)
+    cached = cache.get(key)
+    if cached is None:
+        query_embedding = embed_text(query)
+        opinions = search_opinions(
+            query, max_distance, query_embedding=query_embedding
+        ).select_related("author")
+        rows = [
+            {
+                "id": opinion.id,
+                "text": opinion.text,
+                "topic": opinion.topic,
+                "author": opinion.author.username,
+                "distance": float(opinion.distance),
+                "similarity": 1 - float(opinion.distance),
+                "embedding": [float(v) for v in opinion.embedding],
+            }
+            for opinion in opinions
+        ]
+        cached = {"rows": rows, "query_embedding": query_embedding}
+        cache.set(key, cached, SEARCH_CACHE_TTL)
+    return cached
 
 
 def parse_max_distance(raw_value, default=DEFAULT_MAX_DISTANCE):

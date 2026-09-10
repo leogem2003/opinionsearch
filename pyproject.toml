@@ -10,6 +10,9 @@ dependencies = [
     "pgvector>=0.3",
     "psycopg[binary]>=3.1",
     "python-dotenv>=1.0.1",
+    # opinions/projection.py: the /search page's 2D plot. See
+    # notebooks/umap_projection.ipynb for how the parameters were chosen.
+    "umap-learn>=0.5.6",
 ]
 
 [dependency-groups]
@@ -18,9 +21,7 @@ dev = [
     "pytest-django>=4.8.0",
     "django-debug-toolbar>=4.3.0",
     "black>=24.0.0",
-    # For notebooks/umap_projection.ipynb: the 2D projection experiment that
-    # design.md's read path calls for. Not imported by the app itself yet.
-    "umap-learn>=0.5.6",
+    # notebooks/umap_projection.ipynb only -- not used by the app itself.
     "matplotlib>=3.8",
     "jupyterlab>=4.0",
 ]
