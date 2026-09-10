@@ -1,14 +1,8 @@
-"""Tests for the /search page.
+"""Real embedding, sentiment and clustering checks for the shared search path.
 
-Written before opinions.views.search / opinions/urls.py / the search
-template exist -- they pin down the expected behavior (a max-cosine-distance
-search over Opinion.embedding) that the implementation must satisfy.
-
-The dataset backing these tests is loaded once for this module by
-opinions/tests/conftest.py, from opinions/tests/fixtures/sample_opinions.json.
-Statement index 0 and 2 in that fixture are exact-duplicate text (two
-different users posting the same opinion), which is what lets the
-distance == 0 test check for more than one matching row.
+The local conftest.py loads the sample corpus once for this module.
+Statements 0 and 2 duplicate the same text under different authors, so the
+distance-zero check must return both rows. Fast API checks live in ../test_api.py.
 """
 
 import json
@@ -21,7 +15,7 @@ from django.urls import reverse
 from opinions.models import Opinion
 from opinions.sentiment import SENTIMENT_LABELS
 
-pytestmark = pytest.mark.usefixtures("opinion_samples")
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("opinion_samples")]
 
 
 @pytest.fixture(autouse=True)
@@ -30,21 +24,13 @@ def isolated_search_cache():
     cache.clear()
 
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_opinions.json"
+FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "sample_opinions.json"
 STATEMENTS = json.loads(FIXTURE_PATH.read_text())["statements"]
 
 
 @pytest.fixture
 def search_url():
     return reverse("opinions:search")
-
-
-@pytest.mark.django_db
-def test_search_page_without_a_query_shows_no_results(client, search_url):
-    response = client.get(search_url)
-
-    assert response.status_code == 200
-    assert response.context["results"] == []
 
 
 @pytest.mark.django_db
@@ -151,53 +137,6 @@ def test_search_api_returns_the_same_matches_as_html(client, search_url):
         assert match["topic"] == ""  # Legacy JSON field, separate from clusters.
         assert match["sentimentLabel"] == item["sentiment_label"]
     assert all(isinstance(item["id"], str) for item in api_matches.values())
-
-
-@pytest.mark.django_db
-def test_search_api_caps_results(client):
-    original = Opinion.objects.first()
-    Opinion.objects.bulk_create(
-        [
-            Opinion(
-                text=original.text,
-                author=original.author,
-                embedding=original.embedding,
-            )
-            for _ in range(60)
-        ]
-    )
-    response = client.get(
-        reverse("opinion-search-api"),
-        {"query": original.text, "max_distance": "1"},
-    )
-
-    assert response.status_code == 200
-    assert len(response.json()["results"]) == 50
-
-
-@pytest.mark.parametrize("query", ["x" * 2001, "invalid\x00query"])
-def test_search_api_rejects_invalid_queries_before_embedding(
-    client, query, monkeypatch
-):
-    def unexpected_embedding(text):
-        pytest.fail("Invalid input must not reach the model")
-
-    monkeypatch.setattr("opinions.search.embed_text", unexpected_embedding)
-    response = client.get(reverse("opinion-search-api"), {"query": query})
-    assert response.status_code == 400
-    assert response.json()["error"]["message"]
-
-
-def test_search_api_empty_query_needs_no_database_or_model(client):
-    response = client.get(reverse("opinion-search-api"))
-    assert response.status_code == 200
-    assert response.json() == {"results": [], "limit": 50}
-
-
-def test_search_api_is_read_only(client):
-    response = client.post(reverse("opinion-search-api"), {"query": "housing"})
-    assert response.status_code == 405
-    assert response["Allow"] == "GET"
 
 
 @pytest.mark.django_db

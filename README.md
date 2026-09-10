@@ -1,54 +1,85 @@
 # Opinionsearch
 
-## Features
-TODO: screeshots
+## Run the website
 
-1. Discover and visualize other opinions
-2. Filter by categories, location and time
-3. Topics are discovered automatically by clustering the opinion embeddings
-   (EVōC), at several levels of granularity — nobody tags an opinion by hand
-   
-# Setup
-> [!NOTE]  
-> This is only meant for **development** and not suitable for production.
+Install and start Docker with Compose support (Docker Desktop includes both).
+From the repository root, run:
 
-## Dependincies
-- `python3` with Astral `uv`
-- `gdal`, `geos` and `proj` system libraries
-- `postgresql` with `postgis` and `pgvector` extensions
-See [flake.nix](flake.nix) for initial postgresql setup.
-  
-# Running
-(Dev server)
-```bash
-uv run python manage.py runserver 
-```
-
-Topics are discovered from the corpus rather than typed in, so after loading or
-publishing a batch of opinions, rediscover them with:
-```bash
-uv run python manage.py recluster
-```
-
-## Docker
-> [!WARNING]  
-> The default managemant user will be `admin`, passwd:`admin` and runs the **development server**
-
-
-Start the Django webapp
 ```bash
 docker compose up --build
 ```
 
-The app listens at `http://localhost:8000`. The first build could take a while.
-`docker compose down -v` clears caches and the database.
+Once Vite reports ready, open **[http://localhost:5174](http://localhost:5174)**.
+This starts the database, applies migrations, starts Django and installs/runs the
+frontend. The API connection is configured automatically; no local Node, Python
+or `.env` setup is needed. The first build downloads sizeable dependencies, and
+the first search or submission also downloads model weights.
 
-The [frontend](opinionsearch/frontend/README.md) runs separately and proxies `/api` to this backend. Its issue form saves the original contribution, runs the existing BGE-M3 embedding and sentiment models, and makes the linked opinion searchable. The [intake API](opinionsearch/frontend/API_CONTRACT.md) records visibility, provenance and retry behaviour.
+Press **Ctrl+C** to stop. Run the same command to start again. Database contents
+and model downloads persist in Docker volumes; `docker compose down` also keeps
+them. If port 5174 or 8000 is occupied, stop the previous server first.
 
-Run the tests:
-```bash
-docker compose run --rm web uv run pytest
+This is a **local development/showcase setup**, bound to localhost. Django admin
+is at [http://localhost:8000/admin/](http://localhost:8000/admin/) with the existing
+development login `admin` / `admin`.
+
+## What it includes
+
+- Submit an issue and search the original opinions with BGE-M3 embeddings.
+- Browse predefined civic topics and positive/negative/neutral sentiment.
+- Discover hierarchical clusters with EVōC and inspect them on the Django
+  [search page](http://localhost:8000/search/).
+
+After loading a corpus, run `docker compose run --rm web uv run python manage.py recluster`
+to refresh discovered clusters. The [intake API](opinionsearch/frontend/API_CONTRACT.md)
+records submission visibility, provenance and retry behaviour.
+
+## Develop without Docker
+
+The backend needs Python with `uv`, GDAL/GEOS/PROJ, and PostgreSQL with PostGIS
+and pgvector. See [flake.nix](flake.nix) for the native environment and database
+setup. Apply migrations with `uv run python manage.py migrate`, then start Django
+with `uv run python manage.py runserver`.
+
+The [frontend README](opinionsearch/frontend/README.md) explains running Vite
+locally and using the frontend-only demo. To use local Vite with a Docker backend,
+start only the backend services with `docker compose up --build web`.
+
+## Tests
+
+Everyday checks use fixed model outputs; they still exercise the PostgreSQL
+database and API. Real-model checks live in one opt-in integration folder.
+
+```text
+opinions/tests/
+├── test_api.py          # submission, receipts, retries and search contracts
+├── test_topics.py       # topic decisions, browsing and backfill
+├── test_admin.py        # admin field protections
+├── integration/
+│   ├── test_search.py   # retrieval and submission with real models
+│   ├── test_clustering.py
+│   └── conftest.py      # expensive sample-corpus setup, only for this group
+├── fixtures/           # shared sample opinions
+└── utils.py            # fixture loader, also used by the notebook
 ```
+
+From the repository root:
+
+```bash
+docker compose run --rm --entrypoint uv web run pytest                 # everyday checks
+docker compose run --rm --entrypoint uv web run pytest -m integration  # real models
+```
+
+The entrypoint override runs pytest directly without the web startup's migrations
+or admin creation. Docker starts the database dependency; tests use
+`test_opinionsearch`, separate from the application database. Rebuild the web
+image after changing tests (`docker compose build web`).
+
+In the local development environment, use `uv run pytest` or
+`uv run pytest -m integration`. To run everything, use `uv run pytest -m ''`.
+The default marker selection follows [pytest's standard configuration](https://docs.pytest.org/en/stable/example/simple.html#how-to-change-command-line-options-defaults).
+Real-model checks may download model weights on their first run; they are not
+needed for ordinary frontend changes.
 
 ## Notebooks
 [`notebooks/umap_projection.ipynb`](notebooks/umap_projection.ipynb) prototypes the 2D UMAP

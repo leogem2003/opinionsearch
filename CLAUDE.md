@@ -8,6 +8,11 @@ Early stage. PostgreSQL with PostGIS and pgvector backs the `opinions` app. The 
 
 ## Commands
 
+`docker compose up --build` starts the whole local website at `http://localhost:5174`;
+Compose connects Vite to Django and waits for the API to become healthy. Use
+`docker compose up --build web` when running Vite separately on the host. See
+README for startup details; this remains a development/showcase setup.
+
 Dependencies are managed with `uv` (see `uv.lock`); `flake.nix` provides a Nix devShell with `python3` + `uv` and sets `UV_PYTHON_PREFERENCE=system`.
 
 ```bash
@@ -34,7 +39,7 @@ sudo -u postgres psql -d opinionsearch -c "CREATE EXTENSION IF NOT EXISTS postgi
 
 GeoDjango needs the native GDAL and GEOS libraries present on the system in addition to the Python packages.
 
-Tests: `pytest` and `pytest-django` are in the dev group, configured in `pyproject.toml` (`[tool.pytest.ini_options]`). `addopts = "--reuse-db"` is set there because the `opinionsearch` role can't `CREATE EXTENSION` on a database Django builds from scratch (see Gotchas) — so the test database is created once, by hand, the same way as the main one:
+Tests: `pytest` and `pytest-django` are in the dev group, configured in `pyproject.toml` (`[tool.pytest.ini_options]`). `addopts` includes `--reuse-db` because the `opinionsearch` role can't `CREATE EXTENSION` on a database Django builds from scratch (see Gotchas) — so the test database is created once, by hand, the same way as the main one:
 
 ```bash
 sudo -u postgres createdb -O opinionsearch test_opinionsearch
@@ -44,12 +49,15 @@ sudo -u postgres psql -d test_opinionsearch -c "CREATE EXTENSION IF NOT EXISTS p
 After that, `--reuse-db` keeps reusing it. Pass `--create-db` (or drop and redo the two commands above) when migrations change and the schema needs rebuilding. Then:
 
 ```bash
-uv run pytest                             # all tests
+uv run pytest                             # everyday checks, fixed model outputs
+uv run pytest -m integration              # real embedding/sentiment/clustering
+uv run pytest -m ''                       # both groups
 uv run pytest path/to/test_file.py::test_name   # a single test
 ```
 
-Search and clustering tests explicitly request the module-scoped `opinion_samples` fixture in `opinions/tests/conftest.py`. It loads `opinions/tests/fixtures/sample_opinions.json`, batching embeddings and sentiment into one real call per model, followed by one EVōC fit per requesting module. The module also checks submitting “i like coffee”, finding it for “coffee”, and receiving its stored sentiment. Contract tests use fixed model outputs to check indexing, model failures and retries quickly: `uv run pytest opinions/tests/test_contributions.py`. Clear Django's result cache between database-isolated tests; model loading uses separate process caches.
-The fixture's topic/subtopic annotations are evaluation labels, not stored Opinion fields. Clustering tests request this fixture explicitly; intake/topic contract tests do not load the real models.
+`opinions/tests/test_api.py`, `test_topics.py` and `test_admin.py` are the default checks. They use fixed model outputs. Tests under `opinions/tests/integration/` carry the `integration` marker and run only when selected; new real-model tests must use that marker too. See README's Tests section for the folder map and Docker commands. Do not run model tests for ordinary frontend changes.
+
+The integration folder's `conftest.py` provides the module-scoped `opinion_samples` fixture: one batch each for embeddings and sentiment, then one EVōC fit per requesting module. Both integration modules use `opinions/tests/fixtures/sample_opinions.json`; its topic/subtopic annotations are evaluation labels, not stored Opinion fields. Integration search also checks the “i like coffee” submission through the real pipeline. Keep simple input validation and result limits in `test_api.py` so they cannot trigger corpus inference. Clear Django's result cache between database-isolated tests; model loading uses separate process caches.
 
 `docker-compose.yml` and `docker/` (`docker/db`, `docker/app`) ship the app and a Postgres+PostGIS+pgvector database as containers, so the whole stack can run without installing Nix/uv/Postgres locally — see README's Docker section for usage. Both images build their own Nix environment rather than reusing `flake.nix` directly (its devShell isn't exposed as a flake output to import elsewhere), but pin the same nixpkgs commit as `flake.lock` and install the same packages as the devShell (`postgresql.withPackages [ postgis pgvector ]`, `python3`/`uv`/`gdal`/`geos`/`proj`) — if `flake.lock` is ever updated, update `NIXPKGS_REV` in both Dockerfiles to match by hand. `docker/db`'s entrypoint bootstraps its Postgres superuser role under the app's own name (mirroring flake.nix's `createuser -s "$PGDATABASE"`) and creates *both* `opinionsearch` and `test_opinionsearch` with the extensions already installed, so the non-superuser gotcha below doesn't apply inside Docker.
 
@@ -107,7 +115,7 @@ Predefined topic matching is isolated in `opinions/topic_classification.py`, usi
 ## Gotchas
 
 - **Clustering needs a corpus, not a handful of rows.** `cluster_opinions` refuses below `MIN_OPINIONS_TO_CLUSTER` (20) and is barely meaningful much above it: on 19 opinions EVōC's own defaults returned a single cluster with everything else noise, which is what prompted growing `sample_opinions.json` to 176 statements across 8 themes / 32 sub-themes. If you shrink the fixture, the hierarchy (and the tests asserting it has more than one layer) goes with it.
-- **Loading opinions doesn't cluster them.** `load_opinions_fixture` only embeds and scores; `opinions/tests/conftest.py` calls `cluster_opinions()` afterwards, and outside tests that's `manage.py recluster`. An opinion with no memberships shows as "unclustered" on `/search/` — which is also what you'll see if you forget this step.
+- **Loading opinions doesn't cluster them.** `load_opinions_fixture` only embeds and scores; `opinions/tests/integration/conftest.py` calls `cluster_opinions()` afterwards, and outside tests that's `manage.py recluster`. An opinion with no memberships shows as "unclustered" on `/search/` — which is also what you'll see if you forget this step.
 
 - **Adding `Opinion.sentiment` (`opinions/migrations/0003_opinion_sentiment.py`) was a plain `AddField`, so it left every pre-existing row at `sentiment IS NULL`** rather than retroactively scoring them -- a data migration that calls into a multi-GB model at `migrate` time is the kind of thing this project avoids (see the BGE-M3 gotcha below on why that cost is deliberately never paid outside a request/command). `python manage.py backfill_sentiment` is the one-time fix for rows from before the field existed; it's idempotent (re-running it after every `Opinion` already has a score is a no-op), so it's always safe to run again after `migrate`.
 - **`search_opinions_cached`'s cache is per-process.** It relies on Django's implicit default `CACHES` (`LocMemCache`) — fine for `runserver`/tests/a single container, but a multi-worker deployment (gunicorn with more than one worker, multiple app containers) would give each process its own cache, so the same `(query, max_distance)` could still re-embed once per worker. Move to a shared backend (e.g. Redis) before that matters.
@@ -116,7 +124,7 @@ Predefined topic matching is isolated in `opinions/topic_classification.py`, usi
 - **GDAL/GEOS auto-discovery doesn't work inside the Nix-built Docker images.** `ctypes.util.find_library()` (what GeoDjango uses to locate them by default) resolves names via `ldconfig`'s cache, which never sees Nix store paths — confirmed empirically while building `docker/app`. `settings.py` reads `GDAL_LIBRARY_PATH`/`GEOS_LIBRARY_PATH` from the environment (unset by default, so local/`flake.nix` dev is unaffected either way), and `docker/app/Dockerfile` points both at the Nix profile's merged `lib/` directory.
 - `opinions.User` is intentionally not `AUTH_USER_MODEL`. If that ever changes, note it's only safe to swap before the first migration touching it — changing it later means recreating the database (as happened once already in this project's history).
 - **`Opinion.save()` calls into BGE-M3 synchronously**, so the first opinion created in a process pays the model's load time (weights are pulled from the Hugging Face Hub on first use and cached under `~/.cache/huggingface`; no `HF_TOKEN` is configured, so downloads run at the unauthenticated rate limit). There's no background task queue in this project, so every process that creates an opinion without an embedding pays this cost once, in-request. The search tests use real embeddings to verify retrieval. Contract tests use a fixed embedding; unrelated tests should supply a deterministic embedding or explicitly mock it when creating an `Opinion`.
-- With `--reuse-db`, fixture rows may persist across separate `pytest` invocations. `opinions/tests/conftest.py` clears out `Opinion` (and re-`get_or_create`s `User`s) before loading the explicitly requested search fixture so repeated runs do not pile up duplicate opinions.
+- With `--reuse-db`, fixture rows may persist across separate `pytest` invocations. `opinions/tests/integration/conftest.py` clears out `Opinion` (and re-`get_or_create`s `User`s) before loading the explicitly requested search fixture so repeated runs do not pile up duplicate opinions.
 
 ## Frontend / EVōC migration integration
 

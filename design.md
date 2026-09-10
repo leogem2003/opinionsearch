@@ -1,5 +1,16 @@
 # Main structure
 
+## Local startup
+
+`docker compose up --build` runs the existing Django/PostgreSQL stack plus Vite
+at `localhost:5174`. Compose supplies `OPINIONSEARCH_API_TARGET=http://web:8000`,
+so browser requests use the existing `/api` proxy without manual configuration.
+Frontend dependencies live in a separate Docker volume to avoid mixing host and
+container packages. The frontend waits for the API's health check before starting,
+using [Compose's dependency ordering](https://docs.docker.com/compose/how-tos/startup-order/).
+This keeps prototype startup in one existing configuration file; production
+hosting remains separate work.
+
 ## Backend
 ### Databases
 Postgre with pgvector for vector DB, postGIS for geo data.

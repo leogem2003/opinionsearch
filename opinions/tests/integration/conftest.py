@@ -11,7 +11,7 @@ import pytest
 
 from opinions.tests.utils import load_opinions_fixture
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_opinions.json"
+FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "sample_opinions.json"
 
 
 @pytest.fixture(scope="module")

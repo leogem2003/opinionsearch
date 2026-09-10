@@ -19,9 +19,9 @@ import pytest
 from opinions.clustering import layer_count
 from opinions.models import Cluster, Opinion
 
-pytestmark = pytest.mark.usefixtures("opinion_samples")
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("opinion_samples")]
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_opinions.json"
+FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "sample_opinions.json"
 STATEMENTS = json.loads(FIXTURE_PATH.read_text())["statements"]
 
 

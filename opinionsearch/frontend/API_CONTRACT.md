@@ -145,7 +145,7 @@ The form preserves the input and key after a failed, timed-out or malformed resp
 10. Submit “i like coffee” publicly: the existing BGE-M3 search finds it for “coffee” and includes its original contribution ID.
 11. Submit through a legacy private client: no embedding or search record is created, including after retries.
 
-The PostgreSQL tests in [test_contributions.py](../../opinions/tests/test_contributions.py) cover the API, concurrency and failure recovery with fixed embedding and sentiment outputs. [test_search.py](../../opinions/tests/test_search.py) additionally checks the coffee submission through the real BGE-M3 and sentiment models. A live service restart remains a separate integration check.
+The PostgreSQL tests in [test_api.py](../../opinions/tests/test_api.py) cover the API, concurrency and failure recovery with fixed embedding and sentiment outputs. [integration/test_search.py](../../opinions/tests/integration/test_search.py) additionally checks the coffee submission through the real BGE-M3 and sentiment models (`pytest -m integration`). A live service restart remains a separate integration check.
 
 ## Current backend implementation
 

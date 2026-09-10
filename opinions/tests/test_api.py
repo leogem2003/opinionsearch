@@ -1,6 +1,6 @@
-"""Intake and indexing guarantees against PostgreSQL, with a fixed embedding.
+"""Submission and search contracts against PostgreSQL, using fixed model outputs.
 
-The real BGE-M3 submission-to-search check lives in test_search.py.
+Real model checks live in integration/test_search.py.
 """
 
 import hashlib
@@ -14,6 +14,7 @@ import pytest
 from django.core.cache import cache
 from django.db import DatabaseError, connections
 from django.test import Client
+from django.urls import reverse
 
 from opinions.models import Cluster, Contribution, Opinion
 from opinions.pipeline import index_contribution
@@ -341,6 +342,53 @@ def test_search_returns_indexed_input_with_source_id_but_no_credentials(
         "createdAt",
     }
     assert receipt["accessToken"] not in result.content.decode()
+
+
+@pytest.mark.django_db
+def test_search_page_without_a_query_shows_no_results(client):
+    response = client.get(reverse("opinions:search"))
+    assert response.status_code == 200
+    assert response.context["results"] == []
+
+
+@pytest.mark.django_db
+def test_search_api_caps_results(client, monkeypatch):
+    text = "An opinion about housing."
+    Opinion.objects.bulk_create(
+        [Opinion(text=text, embedding=VECTOR) for _ in range(60)]
+    )
+    monkeypatch.setattr("opinions.search.embed_text", lambda _: VECTOR)
+    response = client.get(
+        reverse("opinion-search-api"), {"query": text, "max_distance": "1"}
+    )
+    assert response.status_code == 200
+    assert len(response.json()["results"]) == 50
+
+
+@pytest.mark.parametrize("query", ["x" * 2001, "invalid\x00query"])
+def test_search_api_rejects_invalid_queries_before_embedding(
+    client, query, monkeypatch
+):
+    def unexpected_embedding(text):
+        pytest.fail("Invalid input must not reach the model")
+
+    monkeypatch.setattr("opinions.search.embed_text", unexpected_embedding)
+    response = client.get(reverse("opinion-search-api"), {"query": query})
+    assert response.status_code == 400
+    assert response.json()["error"]["message"]
+
+
+def test_search_api_empty_query_needs_no_database_or_model(client):
+    response = client.get(reverse("opinion-search-api"))
+    assert response.status_code == 200
+    assert response.json() == {"results": [], "limit": 50}
+
+
+def test_search_api_is_read_only():
+    # Check the view's method restriction independently of CSRF middleware.
+    response = Client().post(reverse("opinion-search-api"), {"query": "housing"})
+    assert response.status_code == 405
+    assert response["Allow"] == "GET"
 
 
 @pytest.mark.django_db

@@ -13,7 +13,10 @@ export default defineConfig(({ mode }) => {
       port: 5174,
       strictPort: true,
       // Only connect to a backend explicitly selected for this project.
-      proxy: apiTarget && mode !== 'demo' ? { '/api': apiTarget } : undefined,
+      // Keep the browser's localhost Host header when Docker resolves "web".
+      proxy: apiTarget && mode !== 'demo'
+        ? { '/api': { target: apiTarget, changeOrigin: false } }
+        : undefined,
     },
     preview: { port: 4174, strictPort: true },
   }

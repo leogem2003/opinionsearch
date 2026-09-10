@@ -34,7 +34,13 @@ Example-data `/topics/:id` links still open that topic’s group in the example 
 
 ## Connect the backend
 
-Start this repository's backend with `docker compose up --build` from the repository root. Copy [.env.example](.env.example) to `.env.local` and set `OPINIONSEARCH_API_TARGET` to that OpinionSearch backend origin. With its default Docker port:
+For the whole website, run `docker compose up --build` from the repository root,
+then open `http://localhost:5174`. Docker installs the frontend dependencies and
+configures its API connection automatically. See the [startup instructions](../../README.md#run-the-website).
+
+For local frontend development outside Docker, start only this repository's backend
+with `docker compose up --build web`. Copy [.env.example](.env.example) to `.env.local`
+and set `OPINIONSEARCH_API_TARGET` to that OpinionSearch backend origin. With its default Docker port:
 
 ```dotenv
 OPINIONSEARCH_API_TARGET=http://127.0.0.1:8000
