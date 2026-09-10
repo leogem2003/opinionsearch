@@ -102,7 +102,7 @@
             {% for result in results %}
                 <li>
                     {{ result.text }}
-                    (similarity: {{ result.similarity|floatformat:4 }}, topic: {{ result.topic }})
+                    (distance: {{ result.distance|floatformat:4 }}, topic: {{ result.topic }})
                 </li>
             {% endfor %}
         </ul>
