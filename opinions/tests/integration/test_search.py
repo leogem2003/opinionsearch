@@ -95,20 +95,23 @@ def test_results_carry_a_real_scored_sentiment(client, search_url):
 
 @pytest.mark.django_db
 def test_submitted_coffee_opinion_is_found_with_real_embeddings(client):
-    created = client.post("/", {"text": "i like coffee", "submission_key": "c" * 64})
+    created = client.post(
+        "/",
+        {"text": "i like coffee", "username": "coffee_fan", "lat": "1", "lon": "2"},
+    )
     assert created.status_code == 302
-    contribution_id = created.url.split("/")[2]
+    user_uuid = created.url.rstrip("/").rsplit("/", 1)[-1]
     result = client.get("/topics/", {"q": "coffee"})
     assert result.status_code == 200
     match = next(
         item
         for item in result.context["results"]
-        if str(item["contribution_id"]) == contribution_id
+        if str(item["author_id"]) == user_uuid
     )
     assert match["text"] == "i like coffee"
     assert match["sentiment"] in SENTIMENT_LABELS
     assert match["sentiment_label"] == SENTIMENT_LABELS[match["sentiment"]]
-    assert Opinion.objects.get(contribution_id=contribution_id).embedding is not None
+    assert Opinion.objects.get(author__uuid=user_uuid).embedding is not None
 
 
 @pytest.mark.django_db

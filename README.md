@@ -58,7 +58,7 @@ database and API. Real-model checks live in one opt-in integration folder.
 
 ```text
 opinions/tests/
-├── test_frontend.py     # submission, receipts, retries and search contracts
+├── test_frontend.py     # submission, identity cookies, editing and search contracts
 ├── test_topics.py       # topic decisions, browsing and backfill
 ├── test_admin.py        # admin field protections
 ├── integration/

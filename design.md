@@ -13,9 +13,8 @@ Docker volume.
 Postgre with pgvector for vector DB, postGIS for geo data.
 - Relational DB:
     - Tables
-        - User: username, uuid.
-        - Contribution: UUID, original text, creation time, declared visibility, unique submission-key hash, private access receipt.
-        - Opinion: text, optional author, embedding, sentiment, timestamp, geo_coordinates, optional unique link to the original Contribution, indexed civic topic IDs and an inspectable classification record. Anonymous submissions do not create a fictitious user.
+        - User: username, uuid, home_location (picked once at signup, on a map; copied onto each new Opinion this user publishes).
+        - Opinion: text, optional author, embedding, sentiment, timestamp, geo_coordinates, indexed civic topic IDs and an inspectable classification record. Anonymous submissions do not create a fictitious user.
         - Argument: text, Opinion.pk
         - Cluster: layer, evoc_id, parent (self), label, centroid, size, exemplar (Opinion).
         - Opinion/Cluster membership: one cluster per hierarchy layer the opinion falls in.
@@ -42,50 +41,56 @@ which is why membership is many-to-many rather than a single foreign key.
 
 ## UX
 ### Describing an issue — implemented
-`GET /` renders the issue form (`opinions/home.html`) with a server-generated,
-hidden submission key. Submitting it states that the text will be publicly
-searchable and posts the text back to `/` alongside that key, always as
-`publication: "public"`.
-Validation checks for blank input using stripped text, but stores the original
-text with its spaces and line breaks unchanged (at most 2,000 characters).
-The view commits the original Contribution (`Contribution.objects.get_or_create`
-keyed on the submission key's hash, so a resubmission after a failure reuses the
-same row instead of duplicating it), then calls `opinions/pipeline.py`'s
-`index_contribution()` — the existing BGE-M3 embedding and sentiment functions
-and predefined-topic classifier, run outside the write transaction — and stores
-a linked Opinion. On success it redirects to
-`/contributions/<id>/?receipt=<access_token>`; the access token travels in the
-URL rather than a cookie or client-side storage, since a server-rendered page
-has no script-managed store to keep it in. Model failures retain the original
-source and re-render the form (same hidden key, submitted text preserved) with
-a retry message, so submitting again completes indexing without a duplicate row.
-Editing a previously saved draft creates a separate source with a stable key
-derived from that form and the edited text. Failure responses retain this effective
-key, and replaying the preceding request also recovers the same source. The earlier
-source is unchanged. Forms show sending/searching feedback and prevent duplicate
-submissions while active; browser Back restores the controls. Search and storage
-failures retain the user's input and show readable messages. Topic sorting has an
-Apply button when JavaScript is disabled.
-The saved-text page (`/contributions/<id>/?receipt=...`) looks the receipt up
-the same way the old `Authorization: Bearer` header check did — comparing the
-query parameter against the stored access token with `secrets.compare_digest` —
-and renders the same "unavailable" response whether the id is unknown or the
-receipt is missing/wrong, so neither leaks which case occurred.
-Search reads the generated Opinion through `/topics/?q=...` and shows
-`contributionId` for provenance. The prototype assigns broad topics from a fixed
-catalogue. No account, LLM call, stance extraction or reasoning analysis is
-required.
-Earlier private inputs retain their visibility; a request that omits publication
-remains private and is not embedded — the issue form itself has no visibility
-control and always submits public text, so this only affects contributions
-created before this form existed. Publishing an existing private input requires
-an explicit decision, not a schema migration or retry side effect.
-Inference runs synchronously outside the write transaction for the showcase.
-`opinions/pipeline.py` isolates the repeatable indexing step so a durable worker
-can run it later without changing original source IDs. Automatic processing
-status, queues and multi-statement extraction remain future work.
-Receipts remain usable while the source exists and the visitor keeps the saved
-link; closing the browser tab does not delete server storage.
+`GET /` renders the issue form (`opinions/home.html`). Submitting it states
+that the text will be publicly searchable and posts the text back to `/`
+(at most 2,000 characters; validation checks for blank input using stripped
+text, but stores the original text with its spaces and line breaks
+unchanged).
+
+A browser identifies itself once, the first time it submits an opinion:
+alongside the text, the form asks for a username and a location picked on an
+OpenStreetMap/Leaflet map (`opinions/identity.py`, `opinions/submissions.py`).
+That identity — a `User` row plus a signed, password-less cookie naming its
+uuid — is remembered for every later visit from the same browser, so
+subsequent submissions show only the text box and reuse the same author and
+location automatically, no re-asking. Losing the cookie (a different
+browser/device, or clearing it) starts a new, unrelated identity; there is no
+account recovery.
+
+`Opinion.objects.create(text=..., author=user, geo_coordinates=user.home_location)`
+does the rest — `Opinion.save()` already computes the BGE-M3 embedding,
+sentiment and predefined-topic classification and assigns provisional
+clusters (see "Adding an opinion" below), so there is no separate indexing
+step: a submission either fully succeeds as one Opinion row (and, the first
+time, one User row) or nothing is written at all. Creating the `User` and the
+`Opinion` happens inside one transaction for exactly that reason — a failed
+embedding/sentiment/topic call can't leave a `User` behind with nothing to
+show for it. Model failures re-render the form with the submitted text
+preserved and a retry message. On success the response redirects to the
+publishing user's own opinions page, `/users/<uuid>/`.
+
+### Managing your own opinions — implemented
+`GET /users/<uuid>/` (`opinions/users.py::user_opinions`) lists a user's
+opinions publicly — text, predefined category, sentiment score, and their
+arguments — for anyone. Only when the visiting browser's identity cookie
+names that same `uuid` do edit controls render: inline per-opinion forms to
+change an opinion's text, and to add or edit its arguments, all on this one
+page. Every such POST re-checks ownership from the cookie server-side
+(`opinions.identity.get_current_user`) regardless of what the page happened
+to render, so a forged request for someone else's uuid is rejected (403)
+rather than trusted because a button existed.
+
+Editing an opinion's text calls `opinions/pipeline.py::reanalyze_opinion`,
+which forces a fresh embedding/sentiment/predefined-topic pass — deliberately
+bypassing `Opinion.save()`'s normal "only once, on creation" guard, since
+here a full re-run is exactly what was asked for — then
+`opinions.clustering.reassign_to_nearest_clusters`, which drops the opinion's
+old cluster memberships (from its previous text) before re-running the
+nearest-centroid assignment against the new embedding.
+
+Every "by `<username>`" reference across the site (search results, topic
+browsing, the click-to-open detail panel) links to that user's `/users/<uuid>/`
+page.
 
 ### Adding an opinion
 A user publishes an opinion.

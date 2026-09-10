@@ -18,23 +18,25 @@ PRIVACY = {
                 "HiveMind stores your original words and uses an embedding "
                 "to find related text and models to estimate its sentiment "
                 "and matching predefined topics. Sentiment describes tone, "
-                "not agreement with a topic. Submissions previously saved "
-                "as private remain private unless explicitly made public.",
+                "not agreement with a topic.",
             ],
         },
         {
-            "id": "access-receipt",
-            "heading": "Your access receipt",
+            "id": "identity-cookie",
+            "heading": "Your identity cookie",
             "paragraphs": [
-                "After you submit, the website links you to a saved-text "
-                "page whose address includes an access receipt. It uses the "
-                "receipt to reopen your saved-text page without an account. "
-                "Keep that link; the receipt does not make publicly "
-                "submitted text private.",
-                "Losing the link can prevent access to your contribution; "
-                "it does not delete the text stored on the server. This "
-                "prototype has no automatic expiry, account recovery, or "
-                "contribution editing or deletion in its interface.",
+                "The first time you submit an opinion, HiveMind asks for a "
+                "name and an approximate location, then remembers you with "
+                "a cookie in your browser -- there is no password or "
+                "account. That cookie is what lets you come back later to "
+                "edit your own opinions and their arguments; it is not sent "
+                "anywhere except back to this site.",
+                "Your name, chosen location and everything you publish "
+                "under them are public: anyone can view the opinions listed "
+                "on your page, though only your own browser's cookie can "
+                "edit them. Clearing cookies, or using a different browser "
+                "or device, starts a new, separate identity -- this "
+                "prototype has no account recovery.",
             ],
         },
     ],
@@ -54,8 +56,9 @@ TERMS = {
             "paragraphs": [
                 "Search original opinions and explore their model-estimated "
                 "sentiment, or browse topics by predefined civic category. "
-                "The issue form lets you submit your own text and reopen it "
-                "with a saved link.",
+                "The issue form lets you submit your own text; from then on "
+                "an identity cookie lets you come back to your own opinions "
+                "page to edit them and their arguments.",
             ],
         },
         {

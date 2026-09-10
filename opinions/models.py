@@ -23,34 +23,24 @@ from .sentiment import score_text
 EMBEDDING_DIM = 1024
 
 
-class Contribution(models.Model):
-    """Original input and its declared visibility; receipts are always private."""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    text = models.TextField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    # Preserve the visibility promised to submissions made before public intake.
-    publication = models.CharField(
-        max_length=7,
-        choices=[("private", "Private"), ("public", "Public")],
-        default="private",
-    )
-    submission_key_hash = models.CharField(max_length=64, unique=True, editable=False)
-    # Persist the private receipt so a lost response can be recovered on retry.
-    # Neither this field nor the submission key is exposed by the read endpoint.
-    access_token = models.CharField(max_length=64, editable=False)
-
-
 class User(models.Model):
     """Publisher of opinions, per design.md: just a username and a uuid.
 
     Deliberately not Django's auth user and not AUTH_USER_MODEL -- no
-    password, email, or permissions. Logging into /admin uses the separate,
-    default django.contrib.auth.models.User instead.
+    password, email, or permissions. A browser is linked to one of these via
+    a signed cookie (opinions/identity.py) rather than a login; the uuid is
+    both the public identifier used in URLs and the value that cookie
+    carries. Logging into /admin uses the separate, default
+    django.contrib.auth.models.User instead.
     """
 
     username = models.CharField(max_length=150, unique=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    # Picked once, on a map, when a browser first identifies itself
+    # (opinions/submissions.py); copied onto every new Opinion this user
+    # publishes afterwards (see Opinion.geo_coordinates below) rather than
+    # asked again each time.
+    home_location = models.PointField(geography=True, null=True, blank=True)
 
     def __str__(self):
         return self.username
@@ -132,17 +122,11 @@ class Opinion(models.Model):
         models.SlugField(max_length=40), default=list, blank=True, editable=False
     )
     topic_analysis = models.JSONField(default=dict, blank=True, editable=False)
-    # One searchable representation per source in this prototype. The stable
-    # source link preserves provenance and makes indexing retries idempotent.
-    contribution = models.OneToOneField(
-        Contribution,
-        null=True,
-        blank=True,
-        editable=False,
-        on_delete=models.PROTECT,
-        related_name="opinion",
-    )
     timestamp = models.DateTimeField(auto_now_add=True)
+    # Set from the author's User.home_location at submission time when there
+    # is an author (opinions/submissions.py); stays independent of it
+    # afterwards -- editing the opinion later doesn't move it, and it
+    # describes this one act of publishing, not the user generally.
     geo_coordinates = models.PointField(geography=True, null=True, blank=True)
     author = models.ForeignKey(
         User,

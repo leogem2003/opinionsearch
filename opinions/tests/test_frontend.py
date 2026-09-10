@@ -1,30 +1,34 @@
-"""Submission and search contracts against PostgreSQL, using fixed model outputs.
+"""Submission, identity-cookie, editing and search contracts against PostgreSQL,
+using fixed model outputs.
 
 Real model checks live in integration/test_search.py.
 """
 
-import hashlib
-import urllib.parse
-from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
 from unittest.mock import Mock
 
 import pytest
 from django.core.cache import cache
-from django.db import DatabaseError, connections
+from django.db import DatabaseError
 from django.test import Client
 from django.urls import reverse
 from django.utils.html import escape
 
-from opinions.models import Cluster, Contribution, Opinion, User
-from opinions.pipeline import index_contribution
+from opinions.models import Argument, Cluster, Opinion, User
 
-KEY = "a" * 64
 VECTOR = [1.0] + [0.0] * 1023
 
 
 @pytest.fixture(autouse=True)
 def embedding(monkeypatch):
+    """Fixed embedding/sentiment/predefined-topic outputs, wired into both
+    places that call the real models: Opinion.save() (the create path, used
+    by submission) imports embed_text/score_text directly into
+    opinions.models's namespace and re-imports classify_topics fresh from
+    opinions.topic_classification on every call; opinions.pipeline's
+    reanalyze_opinion (the edit path) imports its own copies of all three at
+    module load time, so it needs patching at opinions.pipeline instead.
+    """
+
     def unexpected_model():
         pytest.fail(
             "These tests use a fixed embedding; real inference is tested separately"
@@ -32,56 +36,49 @@ def embedding(monkeypatch):
 
     monkeypatch.setattr("opinions.embedding.get_embedder", unexpected_model)
     monkeypatch.setattr("opinions.sentiment.get_sentiment_pipeline", unexpected_model)
-    monkeypatch.setattr("opinions.pipeline.score_text", Mock(return_value=4))
-    monkeypatch.setattr(
-        "opinions.topic_classification.classify_topics",
-        Mock(return_value=(["housing"], {"method": "test"})),
-    )
+
     embed = Mock(return_value=VECTOR)
+    score = Mock(return_value=4)
+    classify = Mock(return_value=(["housing"], {"method": "test"}))
+
+    monkeypatch.setattr("opinions.models.embed_text", embed)
+    monkeypatch.setattr("opinions.models.score_text", score)
+    monkeypatch.setattr("opinions.topic_classification.classify_topics", classify)
     monkeypatch.setattr("opinions.pipeline.embed_text", embed)
+    monkeypatch.setattr("opinions.pipeline.score_text", score)
+    monkeypatch.setattr("opinions.pipeline.classify_topics", classify)
     return embed
 
 
-def submit(client, text="An issue worth understanding.", key=KEY):
-    return client.post("/", {"text": text, "submission_key": key})
-
-
-def receipt_url(response):
-    """Extract the ``/contributions/<id>/?receipt=...`` target of a redirect."""
-    assert response.status_code == 302
-    return response.url
-
-
-def receipt_params(response):
-    parsed = urllib.parse.urlsplit(receipt_url(response))
-    return parsed.path, urllib.parse.parse_qs(parsed.query).get("receipt", [None])[0]
+def submit(
+    client, text="An issue worth understanding.", username="alice", lat=40.0, lon=-74.0
+):
+    """POST an opinion, supplying identity fields only if this client hasn't
+    already identified itself (mirrors home.html only asking once).
+    """
+    data = {"text": text}
+    if "hivemind_user" not in client.cookies:
+        data["username"] = username
+        data["lat"] = lat
+        data["lon"] = lon
+    return client.post("/", data)
 
 
 @pytest.mark.django_db
-def test_submit_creates_and_redirects_to_a_url_carrying_the_receipt(embedding):
+def test_submit_creates_a_user_and_redirects_to_their_opinions_page(embedding):
     client = Client()
-    public_count = Opinion.objects.count()
     text = "\n  Housing 🏡\nSchöne Wohnungen.  \n"
-    saved = submit(client, text)
-    path, token = receipt_params(saved)
-    assert len(token) == 43
-    source = Contribution.objects.get()
-    assert source.text == text
-    assert source.publication == "public"
-    assert source.submission_key_hash == hashlib.sha256(KEY.encode()).hexdigest()
-    assert path == f"/contributions/{source.id}/"
+    saved = submit(client, text, username="alice", lat=40.7128, lon=-74.006)
+    assert saved.status_code == 302
 
-    page = client.get(path, {"receipt": token})
-    assert page.status_code == 200
-    assert page.context["contribution"] == source
-    assert page.context["searchable"] is True
-    assert text in page.content.decode()
-    assert token not in page.content.decode()
+    user = User.objects.get(username="alice")
+    assert saved.url == f"/users/{user.uuid}/"
+    assert user.home_location.coords == (-74.006, 40.7128)
+    assert "hivemind_user" in client.cookies
 
-    assert Opinion.objects.count() == public_count + 1
-    opinion = Opinion.objects.get(contribution=source)
+    opinion = Opinion.objects.get(author=user)
     assert opinion.text == text
-    assert opinion.author is None
+    assert opinion.geo_coordinates.coords == (-74.006, 40.7128)
     assert not opinion.clusters.exists()
     assert opinion.sentiment == 4
     assert list(opinion.embedding) == VECTOR
@@ -89,93 +86,43 @@ def test_submit_creates_and_redirects_to_a_url_carrying_the_receipt(embedding):
 
 
 @pytest.mark.django_db
-def test_receipt_denials_render_the_same_unavailable_response(client):
-    saved = submit(client)
-    path, token = receipt_params(saved)
-    other_path, other_token = receipt_params(submit(client, key="b" * 64))
+def test_second_submission_from_the_same_browser_reuses_the_identity(embedding):
+    client = Client()
+    first = submit(client, "First opinion.", username="alice", lat=1.0, lon=2.0)
+    user = User.objects.get(username="alice")
+    assert first.url == f"/users/{user.uuid}/"
 
-    denials = [
-        client.get(path),
-        client.get(path, {"receipt": "x" * 43}),
-        client.get(path, {"receipt": "non-ascii-é"}),
-        client.get(path, {"receipt": other_token}),
-        client.get(
-            "/contributions/00000000-0000-0000-0000-000000000000/", {"receipt": token}
-        ),
-        client.get("/contributions/not-a-uuid/", {"receipt": token}),
+    second = submit(client, "Second opinion, no identity fields resent.")
+    assert second.status_code == 302
+    assert second.url == f"/users/{user.uuid}/"
+    assert User.objects.count() == 1
+
+    opinions = Opinion.objects.filter(author=user).order_by("pk")
+    assert [o.text for o in opinions] == [
+        "First opinion.",
+        "Second opinion, no identity fields resent.",
     ]
-    for result in denials:
-        assert result.status_code == 404
-        assert result.context["contribution"] is None
-        assert token not in result.content.decode()
+    assert opinions[1].geo_coordinates.coords == opinions[0].geo_coordinates.coords
 
 
 @pytest.mark.django_db
-def test_resubmitting_same_key_recovers_the_same_contribution(client, embedding):
-    first = submit(client)
-    replay = submit(Client())
-    assert receipt_params(first) == receipt_params(replay)
-    assert Contribution.objects.count() == 1
-    assert Opinion.objects.filter(contribution__isnull=False).count() == 1
-    embedding.assert_called_once()
+def test_first_submission_without_identity_fields_is_rejected(client):
+    result = client.post("/", {"text": "An issue."})
+    assert result.status_code == 400
+    assert User.objects.count() == 0
+    assert Opinion.objects.count() == 0
 
 
 @pytest.mark.django_db
-def test_key_collision_with_different_text_starts_a_fresh_contribution(client):
-    submit(client, text="An issue worth understanding.")
-    second = submit(client, text="A different issue.")
-    path, _ = receipt_params(second)
-    assert Contribution.objects.count() == 2
-    second_source = Contribution.objects.get(pk=path.split("/")[2])
-    assert second_source.text == "A different issue."
-
-
-@pytest.mark.django_db
-def test_edited_failed_submission_reuses_its_source_and_effective_key(
-    client, embedding
-):
-    embedding.side_effect = RuntimeError("Model unavailable")
-    assert submit(client, text="Original draft").status_code == 503
-    text = "\n  Edited <draft>.  \n"
-    failed = submit(client, text=text)
-    key = failed.context["submission_key"]
-    assert failed.status_code == 503
-    assert key != KEY
-    assert f">\n{escape(text)}</textarea>" in failed.content.decode()
-    source = Contribution.objects.get(text=text)
-    assert b"Your original text is saved" in failed.content
-
-    assert submit(client, text=text, key=key).status_code == 503
-    # Replaying the preceding request must also recover the same source.
-    assert submit(client, text=text, key=KEY).status_code == 503
-    assert Contribution.objects.count() == 2
-
-    embedding.side_effect = None
-    saved = submit(client, text=text, key=key)
-    assert receipt_params(saved)[0] == f"/contributions/{source.id}/"
-    assert Opinion.objects.get(contribution=source).text == text
-    assert Contribution.objects.count() == 2
-
-
-@pytest.mark.django_db(transaction=True)
-def test_concurrent_retries_create_one_durable_contribution():
-    text = "Same text"
-    barrier = Barrier(4)
-
-    def worker():
-        try:
-            barrier.wait(timeout=10)
-            return submit(Client(), text=text)
-        finally:
-            connections.close_all()
-
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        results = list(pool.map(lambda _: worker(), range(4)))
-
-    assert Contribution.objects.count() == 1
-    assert Opinion.objects.filter(contribution__isnull=False).count() == 1
-    targets = {receipt_url(result) for result in results}
-    assert len(targets) == 1
+def test_first_submission_with_a_taken_username_is_rejected(client):
+    User.objects.create(username="alice")
+    result = client.post(
+        "/", {"text": "An issue.", "username": "alice", "lat": "1", "lon": "2"}
+    )
+    assert result.status_code == 400
+    assert b"already taken" in result.content
+    assert User.objects.count() == 1
+    assert Opinion.objects.count() == 0
 
 
 @pytest.mark.parametrize(
@@ -183,142 +130,107 @@ def test_concurrent_retries_create_one_durable_contribution():
 )
 @pytest.mark.django_db
 def test_invalid_text_is_rejected_without_storage(client, text):
-    # Unlike the retired JSON endpoint, a plain HTML form can't submit a
-    # non-string value or an unpaired UTF-16 surrogate at all -- the browser
-    # (and Django's test client, which mirrors form encoding) rejects those
-    # before any request is even sent.
-    result = client.post("/", {"text": text, "submission_key": KEY})
+    result = client.post(
+        "/", {"text": text, "username": "alice", "lat": "1", "lon": "2"}
+    )
     assert result.status_code == 400
-    assert Contribution.objects.count() == 0
-
-
-@pytest.mark.django_db
-def test_malformed_submission_key_still_succeeds_with_a_generated_key(client):
-    result = client.post("/", {"text": "An issue.", "submission_key": "too-short"})
-    assert result.status_code == 302
-    assert Contribution.objects.count() == 1
+    assert User.objects.count() == 0
+    assert Opinion.objects.count() == 0
 
 
 @pytest.mark.django_db
 def test_2000_unicode_code_points_are_accepted(client):
     text = "🏡" * 2000
     saved = submit(client, text)
-    path, token = receipt_params(saved)
-    assert client.get(path, {"receipt": token}).context["contribution"].text == text
+    assert saved.status_code == 302
+    assert Opinion.objects.get().text == text
 
 
-@pytest.mark.parametrize(
-    "path,method",
-    [("/", "delete"), ("/", "put"), ("/contributions/example/", "post")],
-)
+@pytest.mark.parametrize("path,method", [("/", "delete"), ("/", "put")])
 def test_unsupported_methods_are_rejected(client, path, method):
     result = getattr(client, method)(path)
     assert result.status_code == 405
 
 
 @pytest.mark.django_db
-def test_storage_failures_never_acknowledge_a_save(client, monkeypatch):
+def test_storage_failure_leaves_no_half_written_user_or_opinion(client, monkeypatch):
     def fail(*args, **kwargs):
         raise DatabaseError("Private database details")
 
-    monkeypatch.setattr(Contribution.objects, "get_or_create", fail)
-    result = submit(client)
+    monkeypatch.setattr(Opinion.objects, "create", fail)
+    result = submit(client, username="alice", lat=1.0, lon=2.0)
     assert result.status_code == 503
-    assert Contribution.objects.count() == 0
+    # User creation and Opinion creation share one transaction, so a failed
+    # Opinion doesn't leave an orphaned User a retry could collide with.
+    assert User.objects.count() == 0
+    assert Opinion.objects.count() == 0
 
 
 @pytest.mark.django_db
-def test_index_contribution_rejects_non_public_sources(embedding):
-    source = Contribution.objects.create(
-        text="An earlier private input.",
-        publication="private",
-        submission_key_hash="x" * 64,
-        access_token="y" * 43,
-    )
-    with pytest.raises(ValueError, match="Only public"):
-        index_contribution(source)
-    assert not Opinion.objects.filter(contribution=source).exists()
-    embedding.assert_not_called()
-
-
-@pytest.mark.django_db
-def test_embedding_failure_preserves_source_and_retry_completes_indexing(
-    client, embedding
-):
-    text = "A saved source awaiting its embedding."
+def test_embedding_failure_preserves_typed_text_and_retry_succeeds(client, embedding):
     embedding.side_effect = RuntimeError("Internal model details")
-    failed = submit(client, text=text)
+    text = "A submission awaiting its embedding."
+    failed = submit(client, text=text, username="alice", lat=1.0, lon=2.0)
     assert failed.status_code == 503
     assert "Internal model details" not in failed.content.decode()
-    source = Contribution.objects.get()
-    assert source.text == text
-    assert not Opinion.objects.filter(contribution=source).exists()
-    page = client.get(f"/contributions/{source.id}/", {"receipt": source.access_token})
-    assert page.context["searchable"] is False
+    assert escape(text) in failed.content.decode()
+    assert User.objects.count() == 0
+    assert Opinion.objects.count() == 0
 
     embedding.side_effect = None
-    retried = submit(client, text=text)
+    retried = submit(client, text=text, username="alice", lat=1.0, lon=2.0)
     assert retried.status_code == 302
-    assert Contribution.objects.count() == 1
-    assert Opinion.objects.get(contribution=source).text == text
-    page = client.get(f"/contributions/{source.id}/", {"receipt": source.access_token})
-    assert page.context["searchable"] is True
+    assert Opinion.objects.get().text == text
 
 
 @pytest.mark.django_db
-def test_sentiment_failure_keeps_source_and_retry_completes_it(client, monkeypatch):
+def test_sentiment_failure_preserves_typed_text_and_retry_succeeds(client, monkeypatch):
     scorer = Mock(side_effect=RuntimeError("Internal sentiment model details"))
-    monkeypatch.setattr("opinions.pipeline.score_text", scorer)
-    response = submit(client)
+    monkeypatch.setattr("opinions.models.score_text", scorer)
+    response = submit(client, username="alice", lat=1.0, lon=2.0)
     assert response.status_code == 503
-    source = Contribution.objects.get()
-    assert not Opinion.objects.filter(contribution=source).exists()
+    assert User.objects.count() == 0
+
     scorer.side_effect = None
     scorer.return_value = 4
-    assert submit(client).status_code == 302
-    assert Opinion.objects.get(contribution=source).sentiment == 4
+    assert submit(client, username="alice", lat=1.0, lon=2.0).status_code == 302
+    assert Opinion.objects.get().sentiment == 4
 
 
 @pytest.mark.django_db
-def test_topic_failure_preserves_source_and_retry_completes_it(client, monkeypatch):
-    classifier = Mock(side_effect=RuntimeError("Internal model details"))
-    monkeypatch.setattr("opinions.topic_classification.classify_topics", classifier)
-    response = submit(client)
-    assert response.status_code == 503
-    source = Contribution.objects.get()
-    assert not Opinion.objects.filter(contribution=source).exists()
-    classifier.side_effect = None
-    classifier.return_value = (["housing", "transport"], {"method": "test"})
-    assert submit(client).status_code == 302
-    opinion = Opinion.objects.get(contribution=source)
-    assert opinion.topic_ids == ["housing", "transport"]
-    assert submit(client).status_code == 302
-    assert Opinion.objects.filter(contribution=source).count() == 1
-    assert classifier.call_count == 2
-
-
-@pytest.mark.django_db
-def test_search_returns_indexed_input_with_source_id_but_no_credentials(
+def test_topic_classification_failure_preserves_typed_text_and_retry_succeeds(
     client, monkeypatch
 ):
-    text = "A contribution to public opinion search."
-    saved = submit(client, text)
-    _, token = receipt_params(saved)
-    source = Contribution.objects.get()
+    classifier = Mock(side_effect=RuntimeError("Internal model details"))
+    monkeypatch.setattr("opinions.topic_classification.classify_topics", classifier)
+    response = submit(client, username="alice", lat=1.0, lon=2.0)
+    assert response.status_code == 503
+    assert User.objects.count() == 0
+
+    classifier.side_effect = None
+    classifier.return_value = (["housing", "transport"], {"method": "test"})
+    assert submit(client, username="alice", lat=1.0, lon=2.0).status_code == 302
+    assert Opinion.objects.get().topic_ids == ["housing", "transport"]
+
+
+@pytest.mark.django_db
+def test_search_returns_indexed_input_with_author_but_no_credentials(
+    client, monkeypatch
+):
+    text = "A submission to public opinion search."
+    saved = submit(client, text, username="alice", lat=1.0, lon=2.0)
+    assert saved.status_code == 302
+    opinion = Opinion.objects.get()
     monkeypatch.setattr("opinions.search.embed_text", lambda _: VECTOR)
     result = client.get("/topics/", {"q": text})
     assert result.status_code == 200
-    match = next(
-        item
-        for item in result.context["results"]
-        if item["contribution_id"] == source.id
-    )
+    match = next(item for item in result.context["results"] if item["id"] == opinion.pk)
     assert match["text"] == text
     assert set(match) == {
         "id",
-        "contribution_id",
         "text",
         "author",
+        "author_id",
         "distance",
         "similarity",
         "sentiment",
@@ -328,8 +240,7 @@ def test_search_returns_indexed_input_with_source_id_but_no_credentials(
         "topics",
         "topic_analysis",
     }
-    assert match["author"] is None
-    assert token not in result.content.decode()
+    assert match["author"] == "alice"
 
 
 @pytest.mark.django_db
@@ -394,11 +305,11 @@ def test_search_failure_preserves_query_and_shows_a_readable_error(client, monke
 def test_storage_failure_keeps_forms_and_topic_errors_readable(client, monkeypatch):
     failure = Mock(side_effect=DatabaseError("Internal storage details"))
     monkeypatch.setattr(Opinion.objects, "aggregate", failure)
-    monkeypatch.setattr(Contribution.objects, "get_or_create", failure)
+    monkeypatch.setattr(Opinion.objects, "create", failure)
     home = client.get("/")
     assert home.context["directory_error"]
     assert b"No opinions yet" not in home.content
-    failed = submit(client, text="Keep my draft.")
+    failed = submit(client, text="Keep my draft.", username="alice", lat=1.0, lon=2.0)
     assert failed.status_code == 503
     assert failed.context["text"] == "Keep my draft."
     for path in ("/topics/", "/topics/housing/"):
@@ -472,17 +383,23 @@ def test_opinion_rows_show_the_publishing_users_username_or_anonymous(client):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("clustered", [False, True])
-def test_anonymous_input_keeps_categories_and_source_when_clusters_are_added(
+def test_opinion_keeps_categories_and_search_result_when_clusters_are_added(
     client, monkeypatch, clustered
 ):
+    # An opinion with no author (e.g. created outside the identified
+    # submission form -- admin, a fixture, an older row) must keep working
+    # through search and clustering the same as any other.
     Opinion.objects.all().delete()
     Cluster.objects.all().delete()
     cache.clear()
     monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
     monkeypatch.setattr("opinions.search.score_text", Mock(return_value=4))
-    saved = submit(client)
-    source = Contribution.objects.get()
-    opinion = Opinion.objects.get(contribution=source)
+    opinion = Opinion.objects.create(
+        text="A housing opinion.",
+        embedding=VECTOR,
+        sentiment=4,
+        topic_ids=["housing"],
+    )
     if clustered:
         cluster = Cluster.objects.create(
             layer=0,
@@ -508,14 +425,155 @@ def test_anonymous_input_keeps_categories_and_source_when_clusters_are_added(
 
     result = client.get("/topics/", {"topic": "housing"}).context["results"][0]
     assert result["topics"] == [{"id": "housing", "title": "Housing"}]
-    assert result["contribution_id"] == source.id
     assert result["text"] == opinion.text
-    _, token = receipt_params(saved)
-    assert (
-        client.get(f"/contributions/{source.id}/", {"receipt": token}).status_code
-        == 200
-    )
+    assert result["author_id"] is None
     cache.clear()
+
+
+@pytest.mark.django_db
+def test_user_opinions_page_lists_opinions_publicly_without_edit_forms(client):
+    author = User.objects.create(username="alice")
+    opinion = Opinion.objects.create(
+        text="Housing needs more supply.",
+        embedding=VECTOR,
+        sentiment=4,
+        author=author,
+        topic_ids=["housing"],
+    )
+    Argument.objects.create(text="Supply and demand.", opinion=opinion)
+
+    response = client.get(f"/users/{author.uuid}/")
+    assert response.status_code == 200
+    assert response.context["is_owner"] is False
+    row = response.context["opinions"][0]
+    assert row["text"] == opinion.text
+    assert row["sentiment"] == 4
+    assert [topic["id"] for topic in row["topics"]] == ["housing"]
+    assert [argument.text for argument in row["arguments"]] == ["Supply and demand."]
+    assert b"Save changes" not in response.content
+
+
+@pytest.mark.django_db
+def test_user_opinions_page_shows_edit_forms_to_its_own_identity_cookie(
+    client, embedding
+):
+    submit(client, "Housing needs more supply.", username="alice", lat=1.0, lon=2.0)
+    author = User.objects.get(username="alice")
+
+    owner_view = client.get(f"/users/{author.uuid}/")
+    assert owner_view.status_code == 200
+    assert owner_view.context["is_owner"] is True
+    assert b"Save changes" in owner_view.content
+
+    visitor_view = Client().get(f"/users/{author.uuid}/")
+    assert visitor_view.context["is_owner"] is False
+    assert b"Save changes" not in visitor_view.content
+
+
+@pytest.mark.django_db
+def test_edit_opinion_regenerates_embedding_sentiment_topics_and_clusters(
+    client, embedding
+):
+    submit(client, "Original text.", username="alice", lat=1.0, lon=2.0)
+    author = User.objects.get(username="alice")
+    opinion = Opinion.objects.get(author=author)
+
+    old_cluster = Cluster.objects.create(
+        layer=0, evoc_id=0, label="old", centroid=VECTOR, size=1
+    )
+    opinion.clusters.add(old_cluster)
+
+    new_vector = [0.0, 1.0] + [0.0] * 1022
+    embedding.return_value = new_vector
+    new_cluster = Cluster.objects.create(
+        layer=0, evoc_id=1, label="new", centroid=new_vector, size=0
+    )
+
+    response = client.post(
+        f"/users/{author.uuid}/opinions/{opinion.pk}/edit/",
+        {"text": "Updated text."},
+    )
+    assert response.status_code == 302
+    assert response.url == f"/users/{author.uuid}/#opinion-{opinion.pk}"
+
+    opinion.refresh_from_db()
+    assert opinion.text == "Updated text."
+    assert list(opinion.embedding) == new_vector
+    assert list(opinion.clusters.all()) == [new_cluster]
+
+    old_cluster.refresh_from_db()
+    assert old_cluster.size == 0
+    new_cluster.refresh_from_db()
+    assert new_cluster.size == 1
+
+
+@pytest.mark.django_db
+def test_edit_opinion_rejects_a_request_from_a_different_identity(client, embedding):
+    submit(client, "Original text.", username="alice", lat=1.0, lon=2.0)
+    author = User.objects.get(username="alice")
+    opinion = Opinion.objects.get(author=author)
+
+    intruder = Client()
+    submit(intruder, "Bob's own opinion.", username="bob", lat=3.0, lon=4.0)
+    response = intruder.post(
+        f"/users/{author.uuid}/opinions/{opinion.pk}/edit/", {"text": "Hijacked!"}
+    )
+    assert response.status_code == 403
+    opinion.refresh_from_db()
+    assert opinion.text == "Original text."
+
+
+@pytest.mark.django_db
+def test_add_and_edit_argument_require_ownership(client, embedding):
+    submit(client, "Original text.", username="alice", lat=1.0, lon=2.0)
+    author = User.objects.get(username="alice")
+    opinion = Opinion.objects.get(author=author)
+
+    add_url = f"/users/{author.uuid}/opinions/{opinion.pk}/arguments/add/"
+    added = client.post(add_url, {"text": "A good reason."})
+    assert added.status_code == 302
+    argument = Argument.objects.get(opinion=opinion)
+    assert argument.text == "A good reason."
+
+    edit_url = (
+        f"/users/{author.uuid}/opinions/{opinion.pk}/arguments/{argument.pk}/edit/"
+    )
+    edited = client.post(edit_url, {"text": "A better reason."})
+    assert edited.status_code == 302
+    argument.refresh_from_db()
+    assert argument.text == "A better reason."
+
+    intruder = Client()
+    submit(intruder, "Bob's own opinion.", username="bob", lat=3.0, lon=4.0)
+    denied = intruder.post(add_url, {"text": "Sneaky."})
+    assert denied.status_code == 403
+    assert Argument.objects.filter(opinion=opinion).count() == 1
+
+
+@pytest.mark.django_db
+def test_identity_cookie_is_tamper_evident(rf):
+    from opinions.identity import IDENTITY_COOKIE, get_current_user
+
+    user = User.objects.create(username="alice")
+    request = rf.get("/")
+    request.COOKIES[IDENTITY_COOKIE] = str(user.uuid)  # unsigned, not a real cookie
+    assert get_current_user(request) is None
+
+
+@pytest.mark.django_db
+def test_identity_cookie_round_trips_through_remember(rf):
+    from django.http import HttpResponse
+
+    from opinions.identity import IDENTITY_COOKIE, get_current_user, remember
+
+    user = User.objects.create(username="alice")
+    response = HttpResponse()
+    remember(response, user)
+    cookie_value = response.cookies[IDENTITY_COOKIE].value
+
+    request = rf.get("/")
+    request.COOKIES[IDENTITY_COOKIE] = cookie_value
+    assert get_current_user(request) == user
 
 
 VECTOR2 = [0.0, 1.0] + [0.0] * 1022
