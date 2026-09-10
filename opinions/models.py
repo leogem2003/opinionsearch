@@ -37,13 +37,65 @@ class User(models.Model):
 
 
 class Cluster(models.Model):
-    """A group of nearby opinion embeddings, recomputed as opinions arrive."""
+    """One node of the discovered topic hierarchy -- a group of nearby embeddings.
 
+    Topics aren't declared by whoever publishes an opinion; they're discovered
+    by clustering the embeddings with EVōC (``opinions/clustering.py``), which
+    produces several nested resolutions at once. Each row here is one cluster
+    from one of those resolutions:
+
+    - ``layer`` 0 is the finest grained (EVōC's ``cluster_layers_[0]``); higher
+      layers are coarser, broader topics.
+    - ``evoc_id`` is the cluster's id *within its layer*, as EVōC reports it, so
+      ``(layer, evoc_id)`` is a node of its ``cluster_tree_``.
+    - ``parent`` is that tree's edge towards the coarser layers. It is null for
+      the top layer, and also for any cluster EVōC hangs straight off its
+      synthetic root -- a narrow topic that never merges into a broader one.
+      That root itself isn't stored: "everything" is not a useful topic.
+    - ``label`` is derived from the member texts after the fact
+      (``opinions/topic_labels.py``) -- EVōC only outputs ids, never words.
+
+    Re-clustering replaces every row (see ``clustering.cluster_opinions``), so
+    ids here are not stable identifiers across runs.
+    """
+
+    layer = models.PositiveSmallIntegerField()
+    evoc_id = models.PositiveIntegerField()
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="children",
+    )
+    label = models.CharField(max_length=200, blank=True)
+    # The member opinion closest to every other member (its medoid): the
+    # cluster's best single representative quote, which reads far better than
+    # a keyword label alone. Nullable because a cluster outlives any one of
+    # its opinions.
+    exemplar = models.ForeignKey(
+        "Opinion",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="exemplar_of",
+    )
     centroid = VectorField(dimensions=EMBEDDING_DIM)
+    # Denormalised count of the opinions assigned to this cluster, so listing
+    # topics doesn't need an aggregate over the membership table.
+    size = models.PositiveIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["layer", "evoc_id"], name="unique_cluster_per_layer"
+            )
+        ]
+        ordering = ["layer", "evoc_id"]
+
     def __str__(self):
-        return f"Cluster {self.pk}"
+        return f"L{self.layer}: {self.label or f'cluster {self.evoc_id}'}"
 
 
 class Opinion(models.Model):
@@ -55,7 +107,6 @@ class Opinion(models.Model):
     """
 
     text = models.TextField()
-    topic = models.CharField(max_length=200)
     timestamp = models.DateTimeField(auto_now_add=True)
     geo_coordinates = models.PointField(geography=True, null=True, blank=True)
     author = models.ForeignKey(
@@ -72,13 +123,13 @@ class Opinion(models.Model):
     # reason embedding/cluster aren't: it's a derived value, not one to set
     # by hand. opinions.sentiment.sentiment_label() turns it into a label.
     sentiment = models.PositiveSmallIntegerField(null=True, blank=True)
-    cluster = models.ForeignKey(
-        Cluster,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="opinions",
-    )
+    # One cluster per layer of the hierarchy, rather than a single FK: EVōC
+    # labels every layer independently, and an opinion that is noise at the
+    # finest layer can still fall inside a broader cluster higher up (measured
+    # on this project's own corpus, not hypothetical). Walking parents from a
+    # single finest-layer FK would silently drop those. Empty until
+    # clustering has run at all -- see opinions/clustering.py.
+    clusters = models.ManyToManyField(Cluster, blank=True, related_name="opinions")
 
     class Meta:
         indexes = [
@@ -98,8 +149,13 @@ class Opinion(models.Model):
         The opinion text is fed into BGE-M3 and into the sentiment model
         (opinions/sentiment.py); both results are stored directly on the
         Opinion row before it's written to the database. Editing an already
-        embedded/scored opinion's text does not currently redo either; there's
-        no re-clustering path yet either (clustering isn't implemented).
+        embedded/scored opinion's text does not currently redo either.
+
+        Clustering is deliberately *not* done here: a topic is a property of
+        the corpus, not of one statement, so it can only be (re)discovered by
+        clustering everything at once -- see opinions/clustering.py and
+        ``manage.py recluster``. A newly published opinion therefore has no
+        topics until the next re-clustering run.
         """
         if self.embedding is None and self.text:
             self.embedding = embed_text(self.text)
@@ -107,8 +163,12 @@ class Opinion(models.Model):
             self.sentiment = score_text(self.text)
         super().save(*args, **kwargs)
 
+    def cluster_at(self, layer):
+        """This opinion's cluster in ``layer``, or None if it was noise there."""
+        return self.clusters.filter(layer=layer).first()
+
     def __str__(self):
-        return f"{self.topic}: {self.text[:50]}"
+        return self.text[:60]
 
 
 class Argument(models.Model):

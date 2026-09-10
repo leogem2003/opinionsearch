@@ -1,4 +1,4 @@
-"""Test utility to load a JSON fixture of users/topics/statements as opinions.
+"""Test utility to load a JSON fixture of users/statements as opinions.
 
 The fixture format is:
 
@@ -6,15 +6,20 @@ The fixture format is:
       "users": ["alice", "bob", ...],
       "topics": ["climate policy", ...],
       "statements": [
-        {"user": "alice", "topic": "climate policy", "text": "..."},
+        {"user": "alice", "topic": "climate policy",
+         "subtopic": "carbon pricing", "text": "..."},
         ...
       ]
     }
 
 Each statement is stored as an ``Opinion`` authored by the named user, as if
-that user had published it themselves. ``topics`` is only descriptive of what
-the fixture covers -- ``Opinion.topic`` is a plain string, so it isn't looked
-up against anything.
+that user had published it themselves.
+
+``topic``/``subtopic`` are **not** stored: topics aren't declared any more,
+they're discovered by clustering the embeddings (``opinions/clustering.py``).
+They stay in the fixture as hand-written ground truth, so a test can check
+that the discovered clusters bear some resemblance to the themes the corpus
+was actually written around -- see ``opinions/tests/test_clustering.py``.
 """
 
 import json
@@ -35,6 +40,10 @@ def load_opinions_fixture(path: Path) -> list[Opinion]:
     resulting Opinions are inserted with ``bulk_create``, so ``Opinion.save``
     is not invoked -- the embedding and sentiment are supplied up front
     instead of being computed on save.
+
+    Clustering is *not* run here: it needs the whole corpus at once, so it's a
+    separate step (``opinions.clustering.cluster_opinions``) that the caller
+    runs once the fixture is in place.
     """
     data = json.loads(Path(path).read_text())
     statements = data["statements"]
@@ -50,7 +59,6 @@ def load_opinions_fixture(path: Path) -> list[Opinion]:
     opinions = [
         Opinion(
             text=statement["text"],
-            topic=statement["topic"],
             author=users[statement["user"]],
             embedding=embedding,
             sentiment=sentiment,

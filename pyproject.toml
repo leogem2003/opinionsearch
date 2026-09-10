@@ -16,6 +16,7 @@ dependencies = [
     # opinions/sentiment.py. Already pulled in transitively by flagembedding,
     # but declared directly since opinions/sentiment.py imports it itself.
     "transformers>=4.40",
+    "evoc>=0.3.1",
 ]
 
 [dependency-groups]
