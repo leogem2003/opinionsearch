@@ -3,6 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% comment %}
+    OpenStreetMap's tile servers (see the geographic map in
+    _cluster_results.html) expect a real HTTP referer identifying the
+    requesting site; without this, some browser/privacy-extension defaults
+    send no referer at all and OSM can start blocking those requests.
+  {% endcomment %}
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>{% block title %}HiveMind{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'opinions/css/site.css' %}">
   {% block extra_head %}{% endblock %}

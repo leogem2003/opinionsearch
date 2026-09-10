@@ -18,20 +18,31 @@
       <button class="civic-button" type="submit">Search</button>
     </div>
     <div class="cluster-search-sliders">
-      <label for="n">Related topics ({{ n }})
+      <label for="n">
+        <span class="slider-label">Topics to include (<output id="n_output">{{ n }}</output>)</span>
         <input type="range" id="n" name="n" min="1" max="20" step="1" value="{{ n }}"
                oninput="document.getElementById('n_output').textContent = this.value">
-        <output id="n_output">{{ n }}</output>
+        <span class="slider-hint">How many matching topics to gather opinions from.</span>
       </label>
-      <label for="n_neighbors">Map n_neighbors ({{ n_neighbors }})
+      <label for="n_neighbors">
+        <span class="slider-label">Grouping (<output id="n_neighbors_output">{{ n_neighbors }}</output>)</span>
         <input type="range" id="n_neighbors" name="n_neighbors" min="2" max="50" step="1" value="{{ n_neighbors }}"
                oninput="document.getElementById('n_neighbors_output').textContent = this.value">
-        <output id="n_neighbors_output">{{ n_neighbors }}</output>
+        <span class="slider-hint">Low: many small clusters. High: fewer, bigger ones.</span>
       </label>
-      <label for="min_dist">Map min_dist ({{ min_dist }})
+      <label for="min_dist">
+        <span class="slider-label">Spacing (<output id="min_dist_output">{{ min_dist }}</output>)</span>
         <input type="range" id="min_dist" name="min_dist" min="0" max="0.99" step="0.01" value="{{ min_dist }}"
                oninput="document.getElementById('min_dist_output').textContent = this.value">
-        <output id="min_dist_output">{{ min_dist }}</output>
+        <span class="slider-hint">Low: dots packed together. High: dots spread apart.</span>
+      </label>
+    </div>
+    <div class="cluster-search-dates">
+      <label for="date_from">Published from
+        <input type="date" id="date_from" name="date_from" value="{{ date_from|date:'Y-m-d' }}">
+      </label>
+      <label for="date_to">Published until
+        <input type="date" id="date_to" name="date_to" value="{{ date_to|date:'Y-m-d' }}">
       </label>
     </div>
     <input type="hidden" name="topic_level" value="{{ topic_level }}">
@@ -43,7 +54,7 @@
     {% else %}
       <nav class="topic-level-tabs" aria-label="Topic hierarchy level">
         {% for level_index in level_range %}
-          <a href="?query={{ query|urlencode }}&amp;n={{ n }}&amp;n_neighbors={{ n_neighbors }}&amp;min_dist={{ min_dist }}&amp;topic_level={{ level_index }}"
+          <a href="{% querystring topic_level=level_index %}"
              class="{% if level_index == topic_level %}is-current{% endif %}">
             Level {{ level_index }}{% if level_index == 0 %} (narrowest){% elif level_index == max_topic_level %} (broadest){% endif %}
           </a>
@@ -58,7 +69,7 @@
       {% endif %}
 
       {% if no_matches %}
-        <p class="opinion-search-note">No discovered topic came back close to that search. Try different wording, more related topics, or a broader level.</p>
+        <p class="opinion-search-note">No discovered topic came back close to that search{% if date_from or date_to %} in that date range{% endif %}. Try different wording, more related topics, a broader level, or a wider date range.</p>
       {% else %}
         {% if weak_match %}
           <p class="opinion-search-note">No discovered topic is a strong match for that search &mdash; showing the closest one anyway. Try different wording or a broader level.</p>

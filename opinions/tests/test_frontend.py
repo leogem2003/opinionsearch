@@ -521,10 +521,19 @@ def test_anonymous_input_keeps_categories_and_source_when_clusters_are_added(
 VECTOR2 = [0.0, 1.0] + [0.0] * 1022
 
 
+def _clear_corpus():
+    # --reuse-db can leave rows from an earlier integration run in this test
+    # database (see CLAUDE.md's gotchas); the tests below create clusters at
+    # specific (layer, evoc_id) pairs, which collide with any leftovers.
+    Opinion.objects.all().delete()
+    Cluster.objects.all().delete()
+
+
 @pytest.mark.django_db
 def test_closest_clusters_orders_by_centroid_distance():
     from opinions.views import _closest_clusters
 
+    _clear_corpus()
     near = Cluster.objects.create(
         layer=0, evoc_id=0, label="near", centroid=VECTOR, size=1
     )
@@ -540,6 +549,7 @@ def test_closest_clusters_orders_by_centroid_distance():
 @pytest.mark.django_db
 def test_search_finds_opinions_via_the_closest_cluster(client, monkeypatch):
     cache.clear()
+    _clear_corpus()
     monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
     monkeypatch.setattr("opinions.search.score_text", Mock(return_value=4))
     opinion = Opinion.objects.create(
@@ -562,6 +572,7 @@ def test_search_finds_opinions_via_the_closest_cluster(client, monkeypatch):
 @pytest.mark.django_db
 def test_search_level_tabs_switch_which_layer_is_matched(client, monkeypatch):
     cache.clear()
+    _clear_corpus()
     monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
     monkeypatch.setattr("opinions.search.score_text", Mock(return_value=3))
     fine_opinion = Opinion.objects.create(
@@ -591,6 +602,7 @@ def test_search_level_tabs_switch_which_layer_is_matched(client, monkeypatch):
 @pytest.mark.django_db
 def test_search_flags_a_weak_match_when_the_closest_cluster_is_far(client, monkeypatch):
     cache.clear()
+    _clear_corpus()
     monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
     monkeypatch.setattr("opinions.search.score_text", Mock(return_value=3))
     opinion = Opinion.objects.create(
@@ -610,6 +622,7 @@ def test_search_flags_a_weak_match_when_the_closest_cluster_is_far(client, monke
 
 @pytest.mark.django_db
 def test_browse_root_lists_only_parentless_clusters(client):
+    _clear_corpus()
     top = Cluster.objects.create(
         layer=1, evoc_id=0, label="top", centroid=VECTOR, size=2
     )
@@ -629,6 +642,7 @@ def test_browse_root_lists_only_parentless_clusters(client):
 
 @pytest.mark.django_db
 def test_browse_shows_children_then_the_shared_results_at_a_leaf(client):
+    _clear_corpus()
     opinion = Opinion.objects.create(
         text="A leaf opinion.", embedding=VECTOR, sentiment=3
     )
@@ -656,3 +670,87 @@ def test_browse_shows_children_then_the_shared_results_at_a_leaf(client):
 def test_browse_unknown_cluster_404s(client):
     assert client.get("/search/browse/", {"cluster": 999999}).status_code == 404
     cache.clear()
+
+
+@pytest.mark.django_db
+def test_search_date_range_filters_results_and_carries_coordinates(client, monkeypatch):
+    from datetime import datetime, timezone
+
+    from django.contrib.gis.geos import Point
+
+    cache.clear()
+    # --reuse-db can leave rows from an earlier integration run in this test
+    # database (see CLAUDE.md's gotchas); clear them so (layer=0, evoc_id=0)
+    # below is free to create.
+    Opinion.objects.all().delete()
+    Cluster.objects.all().delete()
+    monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
+    monkeypatch.setattr("opinions.search.score_text", Mock(return_value=3))
+    cluster = Cluster.objects.create(
+        layer=0, evoc_id=0, label="dated", centroid=VECTOR, size=2
+    )
+    in_range = Opinion.objects.create(
+        text="Published in range.",
+        embedding=VECTOR,
+        sentiment=3,
+        geo_coordinates=Point(-122.4194, 37.7749),
+    )
+    out_of_range = Opinion.objects.create(
+        text="Published out of range.", embedding=VECTOR, sentiment=3
+    )
+    Opinion.objects.filter(pk=in_range.pk).update(
+        timestamp=datetime(2025, 6, 15, tzinfo=timezone.utc)
+    )
+    Opinion.objects.filter(pk=out_of_range.pk).update(
+        timestamp=datetime(2020, 1, 1, tzinfo=timezone.utc)
+    )
+    in_range.clusters.add(cluster)
+    out_of_range.clusters.add(cluster)
+
+    response = client.get(
+        "/search/",
+        {
+            "query": "anything",
+            "n": 1,
+            "date_from": "2025-01-01",
+            "date_to": "2025-12-31",
+        },
+    )
+    assert response.status_code == 200
+    assert [row["id"] for row in response.context["results"]] == [in_range.pk]
+    cache.clear()
+
+
+@pytest.mark.django_db
+def test_add_fictional_geo_time_is_reproducible_for_a_given_seed(monkeypatch):
+    from datetime import datetime, timezone as dt_timezone
+
+    from django.core.management import call_command
+
+    # The command anchors its date range to "now" (so re-running it later
+    # still gives *recent* dates, not ones frozen at first use) -- freezing
+    # it here isolates the part that's actually meant to be reproducible:
+    # the seeded choice of city and offset into that range, not wall-clock
+    # time elapsed between two command invocations.
+    monkeypatch.setattr(
+        "opinions.management.commands.add_fictional_geo_time.timezone.now",
+        lambda: datetime(2026, 1, 1, tzinfo=dt_timezone.utc),
+    )
+    first = Opinion.objects.create(text="A", embedding=VECTOR, sentiment=3)
+    second = Opinion.objects.create(text="B", embedding=VECTOR, sentiment=3)
+
+    call_command("add_fictional_geo_time", seed=7)
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.geo_coordinates is not None
+    assert first.timestamp is not None
+    first_run = (first.geo_coordinates.coords, first.timestamp, second.timestamp)
+
+    call_command("add_fictional_geo_time", seed=7)
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert (
+        first.geo_coordinates.coords,
+        first.timestamp,
+        second.timestamp,
+    ) == first_run

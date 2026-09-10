@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Early stage. PostgreSQL with PostGIS and pgvector backs the `opinions` app. The feature branch includes UMAP projection, sentiment scoring and batch EVōC clustering. `/search/` retains the Django search page with UMAP and sentiment charts; `/topics/` (browse/search) and `/topics/<id>/` (one predefined topic) are server-rendered HTML pages that show at most 50 fresh matches and stored sentiment scores — there is no separate frontend process or JSON API; a little framework-free JavaScript handles minor interactivity only. The issue form (`/`) saves the original Contribution, computes BGE-M3 embedding and sentiment, matches predefined civic topics and stores one linked searchable Opinion, then redirects to `/contributions/<id>/?receipt=<token>`. Receipt-protected reads and safe retries remain supported (the receipt travels in that URL rather than a cookie or client-side storage); older private inputs remain private. The `/topics/` sentiment breakdown groups positive, negative and neutral tone, not topic-specific agreement. Read `design.md` before adding features and keep it in sync when the design changes.
+Early stage. PostgreSQL with PostGIS and pgvector backs the `opinions` app. The feature branch includes UMAP projection, sentiment scoring and batch EVōC clustering. `/search/` finds the N discovered EVōC topics closest to a typed statement (not a per-opinion distance threshold) and plots their opinions, pannable/zoomable, as a UMAP topic map or — with fictional demo geography loaded via `manage.py add_fictional_geo_time` — a Leaflet/OpenStreetMap geographic map, filterable by publish date and colourable by topic or sentiment; `/search/browse/` reaches the same view by clicking down the cluster tree instead of typing a query. `/topics/` (browse/search) and `/topics/<id>/` (one predefined topic) are separate server-rendered HTML pages that show at most 50 fresh matches and stored sentiment scores — there is no separate frontend process or JSON API; a little framework-free JavaScript handles minor interactivity only. The issue form (`/`) saves the original Contribution, computes BGE-M3 embedding and sentiment, matches predefined civic topics and stores one linked searchable Opinion, then redirects to `/contributions/<id>/?receipt=<token>`. Receipt-protected reads and safe retries remain supported (the receipt travels in that URL rather than a cookie or client-side storage); older private inputs remain private. The `/topics/` sentiment breakdown groups positive, negative and neutral tone, not topic-specific agreement. Read `design.md` before adding features and keep it in sync when the design changes.
 
 ## Commands
 
@@ -28,6 +28,7 @@ uv run python manage.py backfill_sentiment  # score any Opinion with sentiment I
 uv run python manage.py backfill_topics   # assign predefined civic categories
 uv run python manage.py recluster         # rediscover the topic hierarchy (EVōC)
 uv run python manage.py load_senator_tweets  # load a real corpus (see below) and cluster it
+uv run python manage.py add_fictional_geo_time  # fictional demo location/timestamp per Opinion
 uv run black .                            # format
 uv run jupyter lab                        # notebooks/ (UMAP projection experiment)
 ```

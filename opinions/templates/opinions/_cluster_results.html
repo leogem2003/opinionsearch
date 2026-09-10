@@ -3,7 +3,58 @@ Expects: results, result_limit, plot_data, too_few_to_plot, min_points_to_plot,
 query_sentiment, query_sentiment_label, sentiment_labels.
 {% endcomment %}
 {% if results %}
-  <section class="atlas-chart-panel" aria-labelledby="sentiment-chart-heading">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+
+  {% if plot_data %}
+    <section class="search-map-panel" aria-labelledby="scatter-chart-heading">
+      <header class="atlas-chart-heading">
+        <div>
+          <p class="search-map-eyebrow">Opinion map</p>
+          <h2 id="scatter-chart-heading">Where these opinions sit</h2>
+          <p id="map-hint">Colours are discovered topics{% if query_sentiment %}; the star is your query{% endif %}. Drag to pan, scroll or pinch to zoom.</p>
+        </div>
+        <div class="atlas-map-actions">
+          <button type="button" class="atlas-reset atlas-zoom-button" id="zoom-out" aria-label="Zoom out">&minus;</button>
+          <button type="button" class="atlas-reset atlas-zoom-button" id="zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" class="atlas-reset" id="reset-zoom">Reset view</button>
+        </div>
+      </header>
+
+      <div class="search-map-controls" role="group" aria-label="Map display options">
+        <fieldset>
+          <legend>Layout</legend>
+          <label><input type="radio" name="map-layout" value="topic" checked> Topic map</label>
+          <label><input type="radio" name="map-layout" value="geo"> Geographic map</label>
+        </fieldset>
+        <fieldset>
+          <legend>Colour dots by</legend>
+          <label><input type="radio" name="map-colour" value="topic" checked> Topic</label>
+          <label><input type="radio" name="map-colour" value="sentiment"> Sentiment</label>
+        </fieldset>
+      </div>
+
+      <div id="scatter-chart-wrapper"><canvas id="scatter-chart"></canvas></div>
+      <div id="geo-map-wrapper" hidden>
+        <div id="geo-map"></div>
+        <p class="opinion-search-note" id="geo-map-empty" hidden>None of these opinions have a location to show on the map.</p>
+      </div>
+      <div id="map-legend" class="search-map-legend" aria-hidden="true"></div>
+
+      <div class="opinion-detail-callout" id="opinion-detail" hidden>
+        <div class="opinion-detail-meta">
+          <span class="understanding-badge" id="opinion-topic"></span>
+          <span class="opinion-sentiment-badge" id="opinion-sentiment"></span>
+        </div>
+        <blockquote id="opinion-text"></blockquote>
+        <p class="search-source-reference">by <span id="opinion-author"></span></p>
+      </div>
+      <p class="atlas-chart-note">Dot positions show similarity (topic map) or a fictional demo location (geographic map); neither measures agreement with the topic.</p>
+    </section>
+  {% elif too_few_to_plot %}
+    <p class="opinion-search-note">Only {{ results|length }} opinion{{ results|length|pluralize }} &mdash; need at least {{ min_points_to_plot }} to plot a map.</p>
+  {% endif %}
+
+  <section class="search-map-panel" aria-labelledby="sentiment-chart-heading">
     <header class="atlas-chart-heading">
       <div>
         <p class="search-map-eyebrow">Opinion overview</p>
@@ -15,31 +66,8 @@ query_sentiment, query_sentiment_label, sentiment_labels.
       </div>
     </header>
     <div id="sentiment-chart-wrapper"><canvas id="sentiment-chart"></canvas></div>
-    <p class="atlas-chart-note">Hover a bar to highlight opinions with that sentiment on the map below.</p>
+    {% if plot_data %}<p class="atlas-chart-note">Hover a bar to highlight opinions with that sentiment on the map above.</p>{% endif %}
   </section>
-
-  {% if plot_data %}
-    <section class="atlas-chart-panel" aria-labelledby="scatter-chart-heading">
-      <header class="atlas-chart-heading">
-        <div>
-          <p class="search-map-eyebrow">Opinion map</p>
-          <h2 id="scatter-chart-heading">Where these opinions sit</h2>
-          <p>Colours are discovered topics{% if query_sentiment %}; the star is your query{% endif %}. Drag to pan, scroll or pinch to zoom.</p>
-        </div>
-        <button type="button" class="atlas-reset" id="reset-zoom">Reset view</button>
-      </header>
-      <div id="scatter-chart-wrapper"><canvas id="scatter-chart"></canvas></div>
-      <div class="opinion-detail-callout" id="opinion-detail" hidden>
-        <p><strong id="opinion-topic"></strong></p>
-        <p id="opinion-text"></p>
-        <p>by <span id="opinion-author"></span></p>
-        <p>sentiment: <span id="opinion-sentiment"></span></p>
-      </div>
-      <p class="atlas-chart-note">Dot positions are a 2D map of opinion similarity; they do not measure agreement with the topic.</p>
-    </section>
-  {% elif too_few_to_plot %}
-    <p class="opinion-search-note">Only {{ results|length }} opinion{{ results|length|pluralize }} &mdash; need at least {{ min_points_to_plot }} to plot a map.</p>
-  {% endif %}
 
   <section class="opinion-detail" aria-labelledby="reading-heading" data-reveal-more data-reveal-batch="10">
     <header class="opinion-detail-heading">
@@ -63,7 +91,16 @@ query_sentiment, query_sentiment_label, sentiment_labels.
   {{ query_sentiment|json_script:"query-sentiment-data" }}
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  {% comment %}
+    chartjs-plugin-zoom's mouse/touch *pan* (drag) gesture is built on
+    Hammer.js -- without it loaded first, the plugin's UMD wrapper reads
+    window.Hammer as undefined and silently skips wiring up panning
+    entirely, while wheel/pinch zoom (which doesn't need Hammer) keeps
+    working. Must load before the plugin script.
+  {% endcomment %}
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     (function () {
       function readJSON(id) {
@@ -111,6 +148,7 @@ query_sentiment, query_sentiment_label, sentiment_labels.
           });
         });
         scatterChart.update('none');
+        highlightGeo(score);
       }
 
       new Chart(document.getElementById('sentiment-chart'), {
@@ -131,23 +169,77 @@ query_sentiment, query_sentiment_label, sentiment_labels.
           responsive: true,
           maintainAspectRatio: false,
           plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+          scales: {
+            x: { ticks: { color: '#375b6b' }, grid: { display: false } },
+            y: { beginAtZero: true, ticks: { precision: 0, color: '#375b6b' }, grid: { color: '#e4eaee' } },
+          },
           onHover: function (event, elements) {
             highlightSentiment(elements.length ? elements[0].index + 1 : null);
           },
         },
       });
 
-      // --- Map: one dataset per topic (Chart.js draws the legend and
-      // per-topic colouring for free) plus a starred dataset for the query,
-      // pannable/zoomable via chartjs-plugin-zoom. ---
-      if (plotData) {
-        var datasets = plotData.topics.map(function (topic) {
+      if (!plotData) return;
+
+      // --- Colouring: "topic" uses the server-assigned colour per discovered
+      // topic; "sentiment" groups points the same way opinions/topics.py's
+      // _bucket_by_sentiment does, client-side, since every point already
+      // carries its own sentiment score -- no server round trip needed to
+      // switch. One grouping function serves both the topic map and the
+      // geographic map, so they always agree on colour.
+      //
+      // Topics are grouped by cluster id (point.topic_id), not by label
+      // text: two distinct clusters can share the same c-TF-IDF label, and
+      // grouping by text would merge them into one dot colour, making the
+      // map show fewer topics than the "closest topics" list above it. ---
+      var topicName = {};
+      var topicColor = {};
+      plotData.topics.forEach(function (topic) {
+        topicName[topic.id] = topic.name;
+        topicColor[topic.id] = topic.color;
+      });
+
+      var SENTIMENT_GROUPS = {
+        positive: { label: 'Positive', color: '#1e7a4a', test: function (s) { return s === 4 || s === 5; } },
+        negative: { label: 'Negative', color: '#b3392c', test: function (s) { return s === 1 || s === 2; } },
+        neutral: { label: 'Neutral', color: '#7d3f9e', test: function (s) { return s === 3; } },
+        unscored: { label: 'Not yet analysed', color: '#5f6b73', test: function () { return true; } },
+      };
+      function sentimentGroupOf(point) {
+        var key = Object.keys(SENTIMENT_GROUPS).find(function (k) {
+          return k !== 'unscored' && SENTIMENT_GROUPS[k].test(point.sentiment);
+        });
+        return key || 'unscored';
+      }
+
+      var colourMode = 'topic';
+      function groupKey(point) {
+        return colourMode === 'sentiment' ? sentimentGroupOf(point) : point.topic_id;
+      }
+      function groupLabel(key) {
+        return colourMode === 'sentiment' ? SENTIMENT_GROUPS[key].label : topicName[key];
+      }
+      function groupColor(key) {
+        return colourMode === 'sentiment' ? SENTIMENT_GROUPS[key].color : (topicColor[key] || '#3b6f7a');
+      }
+
+      // --- Topic map: one Chart.js dataset per group (so its legend and
+      // per-group colouring come for free) plus a starred dataset for the
+      // query, pannable/zoomable via chartjs-plugin-zoom. ---
+      function buildDatasets() {
+        var byKey = {};
+        plotData.points.forEach(function (point) {
+          var key = groupKey(point);
+          (byKey[key] = byKey[key] || []).push(point);
+        });
+        var datasets = Object.keys(byKey).sort(function (a, b) {
+          return groupLabel(a) < groupLabel(b) ? -1 : groupLabel(a) > groupLabel(b) ? 1 : 0;
+        }).map(function (key) {
           return {
-            label: topic.name,
-            backgroundColor: topic.color,
+            label: groupLabel(key),
+            backgroundColor: groupColor(key),
             pointRadius: DEFAULT_RADIUS,
-            data: plotData.points.filter(function (p) { return p.topic === topic.name; }),
+            data: byKey[key],
           };
         });
         if (plotData.query_point) {
@@ -166,50 +258,161 @@ query_sentiment, query_sentiment_label, sentiment_labels.
             data: [plotData.query_point],
           });
         }
+        return datasets;
+      }
 
-        scatterChart = new Chart(document.getElementById('scatter-chart'), {
-          type: 'scatter',
-          data: { datasets: datasets },
-          options: {
-            responsive: true,
-            aspectRatio: 1,
-            // UMAP's axes carry no absolute meaning, so only their range
-            // (see opinions/views.py::_build_cluster_plot_data) matters,
-            // not their tick labels.
-            scales: {
-              x: { min: plotData.axis_range.min_x, max: plotData.axis_range.max_x, display: false },
-              y: { min: plotData.axis_range.min_y, max: plotData.axis_range.max_y, display: false },
+      scatterChart = new Chart(document.getElementById('scatter-chart'), {
+        type: 'scatter',
+        data: { datasets: buildDatasets() },
+        options: {
+          responsive: true,
+          // The wrapper has a fixed height (see #scatter-chart-wrapper in
+          // site.css) rather than a fixed aspect ratio, so the map stays a
+          // reasonable height regardless of how wide the page is.
+          maintainAspectRatio: false,
+          // UMAP's axes carry no absolute meaning, so only their range
+          // (see opinions/views.py::_build_cluster_plot_data) matters, not
+          // their tick labels.
+          scales: {
+            x: { min: plotData.axis_range.min_x, max: plotData.axis_range.max_x, display: false },
+            y: { min: plotData.axis_range.min_y, max: plotData.axis_range.max_y, display: false },
+          },
+          plugins: {
+            zoom: {
+              pan: { enabled: true, mode: 'xy' },
+              zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
             },
-            plugins: {
-              zoom: {
-                pan: { enabled: true, mode: 'xy' },
-                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
-              },
-              tooltip: {
-                callbacks: {
-                  title: function () { return ''; },
-                  label: function (context) {
-                    var d = context.raw;
-                    var label = d.is_query ? 'your query' : d.topic;
-                    var text = d.text.length > 50 ? d.text.slice(0, 50) + '…' : d.text;
-                    return label + ': ' + text;
-                  },
+            tooltip: {
+              callbacks: {
+                title: function () { return ''; },
+                // No topic name here on purpose -- the hover preview is just
+                // a quick peek at the opinion itself; click the dot for the
+                // full detail (which does show its topic).
+                label: function (context) {
+                  var d = context.raw;
+                  var text = d.text.length > 50 ? d.text.slice(0, 50) + '…' : d.text;
+                  return d.is_query ? 'your query: ' + text : text;
                 },
               },
             },
-            onClick: function (event, elements) {
-              if (!elements.length) return;
-              var el = elements[0];
-              showOpinion(scatterChart.data.datasets[el.datasetIndex].data[el.index]);
-            },
           },
-        });
+          onClick: function (event, elements) {
+            if (!elements.length) return;
+            var el = elements[0];
+            showOpinion(scatterChart.data.datasets[el.datasetIndex].data[el.index]);
+          },
+        },
+      });
 
-        var resetButton = document.getElementById('reset-zoom');
-        if (resetButton) {
-          resetButton.addEventListener('click', function () { scatterChart.resetZoom(); });
-        }
+      document.getElementById('reset-zoom').addEventListener('click', function () {
+        scatterChart.resetZoom();
+      });
+      document.getElementById('zoom-in').addEventListener('click', function () {
+        scatterChart.zoom(1.2);
+      });
+      document.getElementById('zoom-out').addEventListener('click', function () {
+        scatterChart.zoom(0.8);
+      });
+
+      // --- Geographic map: Leaflet + OpenStreetMap tiles, initialised lazily
+      // the first time it's shown (Leaflet needs a visible, sized container
+      // to lay itself out correctly). Uses the same grouping/colour
+      // functions as the topic map, so switching "colour by" updates both. ---
+      var geoMap = null;
+      var geoMarkers = [];
+      var geoPoints = plotData.points.filter(function (p) { return p.lat != null && p.lon != null; });
+      var legend = document.getElementById('map-legend');
+
+      // Chart.js draws its own legend for the topic map; Leaflet doesn't,
+      // so the geo map needs one built by hand -- both read the same
+      // grouping/colour functions, so it always matches what's plotted.
+      function renderLegend() {
+        var keys = {};
+        geoPoints.forEach(function (point) { keys[groupKey(point)] = true; });
+        legend.innerHTML = '';
+        Object.keys(keys).sort(function (a, b) {
+          return groupLabel(a) < groupLabel(b) ? -1 : groupLabel(a) > groupLabel(b) ? 1 : 0;
+        }).forEach(function (key) {
+          var swatch = document.createElement('span');
+          swatch.className = 'search-map-legend-item';
+          swatch.innerHTML = '<span class="search-map-legend-swatch" style="background:' +
+            groupColor(key) + '"></span>' + groupLabel(key);
+          legend.appendChild(swatch);
+        });
       }
+
+      function renderGeoMarkers() {
+        geoMarkers.forEach(function (marker) { marker.remove(); });
+        geoMarkers = geoPoints.map(function (point) {
+          var marker = L.circleMarker([point.lat, point.lon], {
+            radius: 6,
+            color: '#1a1a1a',
+            weight: 1,
+            fillColor: groupColor(groupKey(point)),
+            fillOpacity: 0.85,
+          }).addTo(geoMap);
+          marker.bindTooltip((point.text.length > 60 ? point.text.slice(0, 60) + '…' : point.text));
+          marker.on('click', function () { showOpinion(point); });
+          return marker;
+        });
+      }
+
+      function highlightGeo(score) {
+        if (!geoMap) return;
+        geoMarkers.forEach(function (marker, index) {
+          var point = geoPoints[index];
+          var match = score == null || point.sentiment === score;
+          marker.setStyle({ radius: match ? 8 : 4, fillOpacity: match ? 0.9 : 0.35 });
+        });
+      }
+
+      function initGeoMap() {
+        if (geoMap) return;
+        geoMap = L.map('geo-map');
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 18,
+        }).addTo(geoMap);
+        if (geoPoints.length) {
+          geoMap.fitBounds(geoPoints.map(function (p) { return [p.lat, p.lon]; }), { padding: [24, 24] });
+        } else {
+          geoMap.setView([39, -98], 4); // continental US, for an empty map
+        }
+        renderGeoMarkers();
+        renderLegend();
+        document.getElementById('geo-map-empty').hidden = geoPoints.length > 0;
+      }
+
+      // --- Layout + colour controls. ---
+      var scatterWrapper = document.getElementById('scatter-chart-wrapper');
+      var geoWrapper = document.getElementById('geo-map-wrapper');
+      var hint = document.getElementById('map-hint');
+
+      document.querySelectorAll('input[name="map-layout"]').forEach(function (input) {
+        input.addEventListener('change', function () {
+          if (input.value === 'geo') {
+            scatterWrapper.hidden = true;
+            geoWrapper.hidden = false;
+            hint.textContent = 'Each dot is a fictional demo location for that opinion. Drag to pan, scroll to zoom.';
+            initGeoMap();
+            geoMap.invalidateSize();
+          } else {
+            geoWrapper.hidden = true;
+            scatterWrapper.hidden = false;
+            legend.innerHTML = ''; // Chart.js draws the topic map's own legend
+            hint.textContent = 'Colours are discovered topics' + (plotData.query_point ? '; the star is your query' : '') + '. Drag to pan, scroll or pinch to zoom.';
+          }
+        });
+      });
+
+      document.querySelectorAll('input[name="map-colour"]').forEach(function (input) {
+        input.addEventListener('change', function () {
+          colourMode = input.value;
+          scatterChart.data.datasets = buildDatasets();
+          scatterChart.update();
+          if (geoMap) { renderGeoMarkers(); renderLegend(); }
+        });
+      });
     })();
   </script>
 {% else %}
