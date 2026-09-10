@@ -18,19 +18,21 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
-from opinions.contributions import create_contribution, get_contribution
-from opinions.views import search_api
-from opinions.topics import topic_index
+from opinions.contributions import contribution_detail, submit_issue
+from opinions.legal import privacy_policy, terms
+from opinions.topics import topic_detail, topics_browse
 
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("search/", include("opinions.urls")),
-    path("api/v1/opinions/", search_api, name="opinion-search-api"),
-    path("api/v1/topics/", topic_index, name="topic-index-api"),
-    path("api/v1/contributions/", create_contribution, name="contribution-create"),
+    path("", submit_issue, name="home"),
+    path("topics/", topics_browse, name="topics"),
+    path("topics/<str:topic_id>/", topic_detail, name="topic-detail"),
     path(
-        "api/v1/contributions/<str:contribution_id>/",
-        get_contribution,
+        "contributions/<str:contribution_id>/",
+        contribution_detail,
         name="contribution-detail",
     ),
+    path("privacy-policy/", privacy_policy, name="privacy-policy"),
+    path("terms-and-conditions/", terms, name="terms"),
 ]

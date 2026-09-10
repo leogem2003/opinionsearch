@@ -2,7 +2,7 @@
 
 The local conftest.py loads the sample corpus once for this module.
 Statements 0 and 2 duplicate the same text under different authors, so the
-distance-zero check must return both rows. Fast API checks live in ../test_api.py.
+distance-zero check must return both rows. Fast checks live in ../test_frontend.py.
 """
 
 import json
@@ -121,45 +121,21 @@ def test_results_carry_a_scored_sentiment_and_matching_label(client, search_url)
 
 
 @pytest.mark.django_db
-def test_search_api_returns_the_same_matches_as_html(client, search_url):
-    params = {"query": STATEMENTS[0]["text"], "max_distance": "0"}
-    expected = client.get(search_url, params).context["results"]
-    response = client.get(reverse("opinion-search-api"), params)
-
-    assert response.status_code == 200
-    assert response.json()["limit"] == 50
-    api_matches = {item["id"]: item for item in response.json()["results"]}
-    assert set(api_matches) == {str(item["id"]) for item in expected}
-    for item in expected:
-        match = api_matches[str(item["id"])]
-        for field in ("text", "distance", "similarity", "sentiment"):
-            assert match[field] == item[field]
-        assert match["topic"] == ""  # Legacy JSON field, separate from clusters.
-        assert match["sentimentLabel"] == item["sentiment_label"]
-    assert all(isinstance(item["id"], str) for item in api_matches.values())
-
-
-@pytest.mark.django_db
 def test_submitted_coffee_opinion_is_found_with_real_embeddings(client):
-    created = client.post(
-        "/api/v1/contributions/",
-        {"text": "i like coffee", "submissionKey": "c" * 64, "publication": "public"},
-        content_type="application/json",
-    )
-    assert created.status_code == 201
-    receipt = created.json()
-    assert receipt["searchable"] is True
-    result = client.get(reverse("opinion-search-api"), {"query": "coffee"})
+    created = client.post("/", {"text": "i like coffee", "submission_key": "c" * 64})
+    assert created.status_code == 302
+    contribution_id = created.url.split("/")[2]
+    result = client.get("/topics/", {"q": "coffee"})
     assert result.status_code == 200
     match = next(
         item
-        for item in result.json()["results"]
-        if item["contributionId"] == receipt["id"]
+        for item in result.context["results"]
+        if str(item["contribution_id"]) == contribution_id
     )
     assert match["text"] == "i like coffee"
     assert match["sentiment"] in SENTIMENT_LABELS
-    assert match["sentimentLabel"] == SENTIMENT_LABELS[match["sentiment"]]
-    assert Opinion.objects.get(contribution_id=receipt["id"]).embedding is not None
+    assert match["sentiment_label"] == SENTIMENT_LABELS[match["sentiment"]]
+    assert Opinion.objects.get(contribution_id=contribution_id).embedding is not None
 
 
 @pytest.mark.django_db

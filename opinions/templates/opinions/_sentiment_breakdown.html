@@ -1,0 +1,86 @@
+{% comment %}
+Expects: results, result_limit, primary_groups, secondary_groups, and
+either `topic` (dict with title/opinionCount) or `query` (search text).
+{% endcomment %}
+<section class="search-positions" aria-label="Sentiment in results" data-sentiment-breakdown>
+  <section class="atlas-chart-panel" aria-labelledby="sentiment-heading">
+    <header class="atlas-chart-heading">
+      <div>
+        <p class="search-map-eyebrow">Opinion overview</p>
+        <h2 id="sentiment-heading">{% if topic %}Sentiment overview{% else %}Sentiment around &ldquo;{{ query }}&rdquo;{% endif %}</h2>
+        <p>
+          {% if topic %}
+            {% if results|length < topic.opinionCount %}{{ results|length }} of {{ topic.opinionCount }}{% else %}{{ results|length }}{% endif %} opinion{{ results|length|pluralize }}
+          {% else %}
+            {{ results|length }}{% if results|length == result_limit %} closest matches &middot; limit {{ result_limit }}{% else %} matching opinion{{ results|length|pluralize }}{% endif %}
+          {% endif %}
+        </p>
+      </div>
+      <button type="button" class="atlas-reset search-hidden" data-sentiment-reset>All views</button>
+    </header>
+    <div class="search-cluster-pair" role="group" aria-label="Filter by sentiment">
+      {% for group in primary_groups %}
+        <button type="button" class="search-cluster-group" style="--position-colour: {{ group.colour }}" aria-pressed="false" {% if not group.items %}disabled{% endif %} data-sentiment-filter="{{ group.id }}" data-sentiment-label="{{ group.label }}">
+          <span class="search-cluster-heading"><span>{{ group.label }}</span><strong>{{ group.items|length }}</strong></span>
+          <svg class="search-cluster" viewBox="0 0 240 166" aria-hidden="true">
+            <ellipse cx="120" cy="83" rx="108" ry="73" class="search-cluster-boundary"></ellipse>
+            {% for dot in group.dots %}<circle cx="{{ dot.cx }}" cy="{{ dot.cy }}" r="4.5"></circle>{% endfor %}
+          </svg>
+          <span class="search-cluster-caption">{% if group.items %}Explore these opinions &rarr;{% else %}No matches in this group{% endif %}</span>
+        </button>
+      {% endfor %}
+    </div>
+    <div class="search-other-positions" role="group" aria-label="Neutral and unanalysed opinions">
+      {% for group in secondary_groups %}
+        <button type="button" style="--position-colour: {{ group.colour }}" aria-pressed="false" {% if not group.items %}disabled{% endif %} data-sentiment-filter="{{ group.id }}" data-sentiment-label="{{ group.label }}">
+          <span>{{ group.label }}</span><strong>{{ group.items|length }}</strong>
+        </button>
+      {% endfor %}
+    </div>
+    <p class="atlas-chart-note">One dot per matching opinion. Sentiment describes tone, not agreement with the topic.</p>
+  </section>
+
+  <section class="opinion-detail" aria-labelledby="reading-heading">
+    <header class="opinion-detail-heading">
+      <div>
+        <h2 id="reading-heading">Original words</h2>
+        <p role="status" data-sentiment-summary>All views &middot; {{ results|length }} opinion{{ results|length|pluralize }}</p>
+      </div>
+      <button type="button" class="civic-text-button search-hidden" data-sentiment-reset>Show all opinions &rarr;</button>
+    </header>
+    {% for item in results %}
+      <details class="opinion-reason-row search-opinion-row" data-sentiment-item="{{ item.sentiment_group }}">
+        <summary>
+          <span><span class="opinion-row-label">{{ item.sentiment_group_label }}{% if item.topics %} &middot; {{ item.topics.0.title }}{% endif %}</span>{{ item.text }}</span>
+          <span class="search-row-expand" aria-hidden="true">+</span>
+        </summary>
+        <div class="opinion-reason-body">
+          <p class="opinion-connection">
+            {% if item.sentiment_group == 'unscored' %}This opinion does not have a sentiment score yet.{% else %}Model sentiment score: {{ item.sentiment }}/5. This estimates the tone of the original text; it does not measure support for the searched topic.{% endif %}
+          </p>
+          <p class="search-source-reference">Opinion {{ item.id }}{% if item.contribution_id %} &middot; Source {{ item.contribution_id }}{% endif %}</p>
+          {% if item.topics %}
+            <nav class="search-opinion-topics" aria-label="Assigned topics">
+              {% for assigned in item.topics %}<a href="/topics/{{ assigned.id }}/">{{ assigned.title }} &#8599;</a>{% endfor %}
+            </nav>
+          {% endif %}
+          {% if item.topic_analysis.catalogueVersion %}<p class="search-source-reference">Topics estimated from predefined descriptions &middot; {{ item.topic_analysis.catalogueVersion }}</p>{% endif %}
+        </div>
+      </details>
+    {% endfor %}
+    {% if not results %}<p class="opinion-message">No opinions in this group.</p>{% endif %}
+  </section>
+
+  <footer class="atlas-method">
+    <details>
+      <summary>How to read this view</summary>
+      <div>
+        <p>This view covers only the returned search results, up to {{ result_limit }}. Counts are opinions, not unique people or a national poll.</p>
+        <p>The backend sentiment model assigns a score from 1 to 5: 1&ndash;2 are grouped as negative, 3 as neutral, and 4&ndash;5 as positive. Missing scores remain unanalysed. These are model estimates, not labels supplied by contributors.</p>
+        <p>A positive or negative tone does not establish whether someone is in favour of the searched topic. Topic-specific stance and supporting reasons require a separate analysis step.</p>
+        <p>Dots show group membership. Their positions within each group are for layout and do not measure similarity, strength of opinion or distance between people.</p>
+        <p>Topics are estimated by comparing each opinion&rsquo;s embedding with a predefined catalogue. Several topics may match; weak matches remain unassigned. Topic matching is experimental and does not extract a position or supporting argument.</p>
+      </div>
+    </details>
+  </footer>
+</section>

@@ -6,18 +6,6 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "python", "manage.py", "runserver", "0.0.0.0:8000"],
       "port": 8000
-    },
-    {
-      "name": "frontend-demo",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "opinionsearch/frontend", "run", "dev:demo"],
-      "port": 5174
-    },
-    {
-      "name": "frontend-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "opinionsearch/frontend", "run", "dev"],
-      "port": 5174
     }
   ]
 }

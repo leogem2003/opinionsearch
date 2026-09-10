@@ -60,25 +60,26 @@ def test_topic_counts_and_browsing_use_stored_membership_without_inference(
         sentiment=4,
         topic_analysis={"method": "test"},
     )
-    response = client.get("/api/v1/topics/")
+    response = client.get("/topics/")
     assert response.status_code == 200
-    directory = response.json()
-    counts = {topic["id"]: topic["opinionCount"] for topic in directory["topics"]}
-    assert directory["totalOpinions"] == 2
+    counts = {
+        topic["id"]: topic["opinionCount"] for topic in response.context["directory"]
+    }
+    assert response.context["total_opinions"] == 2
     assert counts["housing"] == counts["transport"] == counts["unassigned"] == 1
     assert counts["healthcare"] == 0
     for topic in ["housing", "transport"]:
-        results = client.get("/api/v1/opinions/", {"topic": topic}).json()["results"]
-        assert [row["id"] for row in results] == [str(shared.pk)]
+        results = client.get("/topics/", {"topic": topic}).context["results"]
+        assert [row["id"] for row in results] == [shared.pk]
         assert results[0]["distance"] is None
         assert {row["id"] for row in results[0]["topics"]} == {"housing", "transport"}
-    assert client.get("/api/v1/opinions/", {"topic": "unassigned"}).json()["results"][
-        0
-    ]["id"] == str(other.pk)
+    unassigned = client.get("/topics/", {"topic": "unassigned"}).context["results"]
+    assert unassigned[0]["id"] == other.pk
 
 
 def test_unknown_topic_is_rejected_without_inference(client):
-    assert client.get("/api/v1/opinions/", {"topic": "invented"}).status_code == 400
+    assert client.get("/topics/", {"topic": "invented"}).status_code == 404
+    assert client.get("/topics/invented/").status_code == 404
 
 
 @pytest.mark.django_db

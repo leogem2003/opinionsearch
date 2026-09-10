@@ -9,15 +9,16 @@ From the repository root, run:
 docker compose up --build
 ```
 
-Once Vite reports ready, open **[http://localhost:5174](http://localhost:5174)**.
-This starts the database, applies migrations, starts Django and installs/runs the
-frontend. The API connection is configured automatically; no local Node, Python
-or `.env` setup is needed. The first build downloads sizeable dependencies, and
-the first search or submission also downloads model weights.
+Once the healthcheck passes, open **[http://localhost:8000](http://localhost:8000)**.
+This starts the database, applies migrations and starts Django, which serves the
+whole website (issue form, topic search/browse, saved-contribution pages) directly
+as server-rendered HTML — no separate frontend process, Node or `.env` setup is
+needed. The first build downloads sizeable dependencies, and the first search or
+submission also downloads model weights.
 
 Press **Ctrl+C** to stop. Run the same command to start again. Database contents
 and model downloads persist in Docker volumes; `docker compose down` also keeps
-them. If port 5174 or 8000 is occupied, stop the previous server first.
+them. If port 8000 is occupied, stop the previous server first.
 
 This is a **local development/showcase setup**, bound to localhost. Django admin
 is at [http://localhost:8000/admin/](http://localhost:8000/admin/) with the existing
@@ -31,19 +32,16 @@ development login `admin` / `admin`.
   [search page](http://localhost:8000/search/).
 
 After loading a corpus, run `docker compose run --rm web uv run python manage.py recluster`
-to refresh discovered clusters. The [intake API](opinionsearch/frontend/API_CONTRACT.md)
-records submission visibility, provenance and retry behaviour.
+to refresh discovered clusters.
 
 ## Develop without Docker
 
 The backend needs Python with `uv`, GDAL/GEOS/PROJ, and PostgreSQL with PostGIS
 and pgvector. See [flake.nix](flake.nix) for the native environment and database
 setup. Apply migrations with `uv run python manage.py migrate`, then start Django
-with `uv run python manage.py runserver`.
-
-The [frontend README](opinionsearch/frontend/README.md) explains running Vite
-locally and using the frontend-only demo. To use local Vite with a Docker backend,
-start only the backend services with `docker compose up --build web`.
+with `uv run python manage.py runserver` and open
+[http://localhost:8000](http://localhost:8000) — the frontend is served by the
+same process, so there is nothing else to start.
 
 ## Tests
 
@@ -52,7 +50,7 @@ database and API. Real-model checks live in one opt-in integration folder.
 
 ```text
 opinions/tests/
-├── test_api.py          # submission, receipts, retries and search contracts
+├── test_frontend.py     # submission, receipts, retries and search contracts
 ├── test_topics.py       # topic decisions, browsing and backfill
 ├── test_admin.py        # admin field protections
 ├── integration/

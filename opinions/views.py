@@ -2,7 +2,6 @@ import colorsys
 import hashlib
 
 import numpy as np
-from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
@@ -13,10 +12,8 @@ from .projection import (
     parse_n_neighbors,
     project_2d,
 )
-from .search import parse_max_distance, search_opinions, search_opinions_cached
+from .search import parse_max_distance, search_opinions_cached
 from .sentiment import SENTIMENT_LABELS, sentiment_label
-from .models import Opinion
-from .topic_classification import TOPIC_IDS, TOPICS
 
 # Shown for an opinion the clustering left as noise at the chosen layer, or
 # one published since the last clustering run. Not a topic, but it has to be
@@ -26,65 +23,6 @@ UNCLUSTERED_LABEL = "unclustered"
 # A little headroom around the query on the scatter chart's axes, so the
 # single farthest point doesn't sit exactly on the edge -- see _build_plot_data.
 AXIS_PADDING_FACTOR = 1.1
-
-SEARCH_LIMIT = 50
-
-
-@require_GET
-def search_api(request):
-    """Bounded, fresh results for the React frontend, using the shared query.
-
-    Sentiment describes the text's tone, not agreement with the query. Keep
-    UMAP and query sentiment computation on the existing HTML search page.
-    """
-    query = request.GET.get("query", "").strip()
-    topic = request.GET.get("topic", "")
-    if topic and topic not in TOPIC_IDS | {"unassigned"}:
-        return JsonResponse({"error": {"message": "Unknown topic."}}, status=400)
-    if len(query) > 2000 or "\0" in query:
-        return JsonResponse(
-            {"error": {"message": "Use a search of at most 2,000 characters."}},
-            status=400,
-        )
-    results = []
-    if query or topic:
-        matches = (
-            search_opinions(query, parse_max_distance(request.GET.get("max_distance")))
-            if query
-            else Opinion.objects.order_by("-timestamp", "-pk")
-        )
-        if topic:
-            matches = (
-                matches.filter(topic_ids=[])
-                if topic == "unassigned"
-                else matches.filter(topic_ids__contains=[topic])
-            )
-        matches = matches[:SEARCH_LIMIT]
-        results = [
-            {
-                "id": str(item.pk),
-                "contributionId": (
-                    str(item.contribution_id) if item.contribution_id else None
-                ),
-                "text": item.text,
-                # Compatibility with the React contract; use `topics` for
-                # civic categories. The legacy model field was removed.
-                "topic": "",
-                "distance": float(item.distance) if query else None,
-                "similarity": 1 - float(item.distance) if query else None,
-                "sentiment": item.sentiment,
-                "sentimentLabel": sentiment_label(item.sentiment),
-                "topics": [
-                    {"id": assigned["id"], "title": assigned["title"]}
-                    for assigned in TOPICS
-                    if assigned["id"] in item.topic_ids
-                ],
-                "topicAnalysis": item.topic_analysis,
-                "createdAt": item.timestamp.isoformat(),
-            }
-            for item in matches
-        ]
-    return JsonResponse({"results": results, "limit": SEARCH_LIMIT})
 
 
 @require_GET

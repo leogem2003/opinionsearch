@@ -1,7 +1,7 @@
-# Local prototype: Vite frontend, Django API and PostgreSQL.
+# Local prototype: Django (server-rendered frontend + PostgreSQL).
 # The backend and database keep the same Nix environment as flake.lock.
 #
-#   docker compose up --build          # website at http://localhost:5174
+#   docker compose up --build          # website at http://localhost:8000
 #   docker compose run --rm --entrypoint uv web run pytest  # fast tests (see README)
 services:
   db:
@@ -30,7 +30,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/topics/', timeout=3)"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/topics/', timeout=3)"]
       interval: 5s
       timeout: 5s
       start_period: 60s
@@ -40,24 +40,6 @@ services:
       # keep them across `down`/`up` instead of re-downloading every time.
       - hf-cache:/data/hf-cache
 
-  frontend:
-    image: node:24-alpine
-    working_dir: /app
-    init: true
-    command: ["sh", "-c", "npm ci --no-audit --no-fund && exec npm run dev -- --host 0.0.0.0"]
-    environment:
-      OPINIONSEARCH_API_TARGET: http://web:8000
-    depends_on:
-      web:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:5174:5174"
-    volumes:
-      - ./opinionsearch/frontend:/app
-      # Container dependencies stay separate from host-installed packages.
-      - frontend-node-modules:/app/node_modules
-
 volumes:
   db-data:
   hf-cache:
-  frontend-node-modules:
