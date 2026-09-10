@@ -1,4 +1,6 @@
 import hashlib
+import math
+import colorsys
 
 import numpy as np
 from django.shortcuts import render
@@ -16,22 +18,10 @@ from .sentiment import SENTIMENT_LABELS, sentiment_label
 # single farthest point doesn't sit exactly on the edge -- see _build_plot_data.
 AXIS_PADDING_FACTOR = 1.1
 
-# Fixed, tab10-like palette. A topic maps onto one of these by hashing its
-# name (see _topic_color) rather than by position in this request's result
-# set, so a topic keeps the same colour from one search to the next.
-TOPIC_PALETTE = [
-    "#1f77b4",
-    "#ff7f0e",
-    "#2ca02c",
-    "#d62728",
-    "#9467bd",
-    "#8c564b",
-    "#e377c2",
-    "#7f7f7f",
-    "#bcbd22",
-    "#17becf",
-]
-
+# Size of the star marking the query itself (see _star_points), and of its
+# smaller copy drawn in the legend.
+QUERY_MARKER_RADII = (12, 5)
+LEGEND_STAR_RADII = (6, 2.5)
 
 def search(request):
     """Render the search page: results list, a sentiment histogram, and a
@@ -181,8 +171,32 @@ def _build_plot_data(
         ],
     }
 
-
-def _topic_color(topic):
-    """A stable palette colour for a topic, independent of any one request's results."""
+def _topic_color(topic, num_hues=24):
+    """
+    Generates a stable, dynamic hex color for a topic.
+    Uses quantization to ensure a minimum visual difference between colors.
+    """
     digest = hashlib.md5(topic.encode()).hexdigest()
-    return TOPIC_PALETTE[int(digest, 16) % len(TOPIC_PALETTE)]
+    
+    # Grab a large enough integer from the hash to use for math
+    hash_val = int(digest[:8], 16)
+    
+    # 1. Quantize the Hue
+    # Snaps the color to one of `num_hues` distinct points on the color wheel.
+    # 24 hues = a minimum of 15 degrees of separation between colors.
+    hue_step = hash_val % num_hues
+    hue = hue_step / num_hues
+    
+    # 2. Quantize the Lightness 
+    # Use a different part of the hash to pick between 3 safe lightness levels.
+    # We keep them between 0.35 and 0.51 to ensure dark text contrast on white.
+    lightness_step = (hash_val // num_hues) % 3
+    lightness = 0.35 + (lightness_step * 0.08) # Yields 0.35, 0.43, or 0.51
+    
+    # 3. Lock Saturation
+    saturation = 0.70 
+    
+    # Convert HLS to RGB
+    r, g, b = colorsys.hls_to_rgb(hue, lightness, saturation)
+    
+    return "#{:02x}{:02x}{:02x}".format(int(r * 255), int(g * 255), int(b * 255))
