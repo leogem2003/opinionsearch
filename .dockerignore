@@ -1,0 +1,11 @@
+.git
+.claude
+.venv
+.pgdata
+.env
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+db.sqlite3

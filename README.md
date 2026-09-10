@@ -20,6 +20,20 @@ See [flake.nix](flake.nix) for initial postgresql setup.
 uv run python manage.py runserver 
 ```
 
+## Docker
+Start the Django webapp
+```bash
+docker compose up --build
+```
+
+The app listens at `http://localhost:8000`. The first build could take a while.
+`docker compose down -v` clears caches and the database.
+
+Run the tests:
+```bash
+docker compose run --rm web uv run pytest
+```
+
 ## Limitations
 1. Since this is a website, it is centralized and controlled by a single entity
 2. There is currently no bot protection implemented to prevent inauthentic behavior

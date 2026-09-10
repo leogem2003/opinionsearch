@@ -32,6 +32,13 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+# GDAL/GEOS auto-discovery (ctypes.util.find_library) doesn't see Nix store
+# paths, since they're never registered in ldconfig's cache. Unset (the
+# default), this preserves whatever auto-discovery already does on the host;
+# the Docker image (docker/app/Dockerfile) sets both to the Nix profile's
+# library paths.
+GDAL_LIBRARY_PATH = os.environ.get("GDAL_LIBRARY_PATH") or None
+GEOS_LIBRARY_PATH = os.environ.get("GEOS_LIBRARY_PATH") or None
 
 # Application definition
 

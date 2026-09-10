@@ -1,0 +1,41 @@
+# Ships opinionsearch as it stands today: the Django dev server (no
+# gunicorn/nginx -- see CLAUDE.md's "Not yet wired up") plus a Postgres +
+# PostGIS + pgvector database, both built with Nix (docker/db, docker/app)
+# using the same nixpkgs pin as flake.lock.
+#
+#   docker compose up --build          # dev server at http://localhost:8000
+#   docker compose run --rm web uv run pytest   # test suite (see README)
+services:
+  db:
+    build:
+      context: ./docker/db
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "opinionsearch", "-d", "opinionsearch"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_NAME: opinionsearch
+      DB_USER: opinionsearch
+      DB_HOST: db
+      DB_PORT: "5432"
+    ports:
+      - "8000:8000"
+    volumes:
+      # Model weights are multi-GB (see CLAUDE.md's Opinion.save() gotcha) --
+      # keep them across `down`/`up` instead of re-downloading every time.
+      - hf-cache:/data/hf-cache
+
+volumes:
+  db-data:
+  hf-cache:
