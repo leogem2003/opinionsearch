@@ -13,6 +13,9 @@ dependencies = [
     # opinions/projection.py: the /search page's 2D plot. See
     # notebooks/umap_projection.ipynb for how the parameters were chosen.
     "umap-learn>=0.5.6",
+    # opinions/sentiment.py. Already pulled in transitively by flagembedding,
+    # but declared directly since opinions/sentiment.py imports it itself.
+    "transformers>=4.40",
 ]
 
 [dependency-groups]

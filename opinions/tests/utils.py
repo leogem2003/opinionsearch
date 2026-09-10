@@ -22,26 +22,30 @@ from pathlib import Path
 
 from opinions.embedding import embed_texts
 from opinions.models import Opinion, User
+from opinions.sentiment import score_texts
 
 
 def load_opinions_fixture(path: Path) -> list[Opinion]:
     """Create Users and Opinions from a JSON fixture file.
 
-    All statement texts are embedded in a single batch call (see
-    ``opinions.embedding.embed_texts``) instead of one BGE-M3 call per
+    All statement texts are embedded, and separately sentiment-scored, in one
+    batch call each (see ``opinions.embedding.embed_texts`` and
+    ``opinions.sentiment.score_texts``) instead of one model call per
     statement, since fixtures can list many statements at once. The
     resulting Opinions are inserted with ``bulk_create``, so ``Opinion.save``
-    is not invoked -- embeddings are supplied up front instead of being
-    computed on save.
+    is not invoked -- the embedding and sentiment are supplied up front
+    instead of being computed on save.
     """
     data = json.loads(Path(path).read_text())
     statements = data["statements"]
+    texts = [statement["text"] for statement in statements]
 
     users = {
         username: User.objects.get_or_create(username=username)[0]
         for username in data["users"]
     }
-    embeddings = embed_texts([statement["text"] for statement in statements])
+    embeddings = embed_texts(texts)
+    sentiments = score_texts(texts)
 
     opinions = [
         Opinion(
@@ -49,7 +53,8 @@ def load_opinions_fixture(path: Path) -> list[Opinion]:
             topic=statement["topic"],
             author=users[statement["user"]],
             embedding=embedding,
+            sentiment=sentiment,
         )
-        for statement, embedding in zip(statements, embeddings)
+        for statement, embedding, sentiment in zip(statements, embeddings, sentiments)
     ]
     return Opinion.objects.bulk_create(opinions)

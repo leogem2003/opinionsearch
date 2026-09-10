@@ -76,8 +76,11 @@ def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
     Returns a dict with:
 
     - ``rows``: a list of plain dicts (id, text, topic, author, distance,
-      similarity, embedding) instead of ``search_opinions``'s lazy annotated
-      QuerySet, since a QuerySet can't survive a round trip through the cache.
+      similarity, sentiment, embedding) instead of ``search_opinions``'s lazy
+      annotated QuerySet, since a QuerySet can't survive a round trip through
+      the cache. ``sentiment`` is the raw 1-5 score stored on the Opinion (see
+      ``opinions.sentiment``), not yet turned into a label -- that's a display
+      concern, left to whatever renders these rows.
     - ``query_embedding``: the query's own embedding, cached alongside the
       rows for the same reason -- ``opinions.projection`` plots the query
       itself next to its matches, and shouldn't need to re-embed the query
@@ -98,6 +101,7 @@ def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
                 "author": opinion.author.username,
                 "distance": float(opinion.distance),
                 "similarity": 1 - float(opinion.distance),
+                "sentiment": opinion.sentiment,
                 "embedding": [float(v) for v in opinion.embedding],
             }
             for opinion in opinions
