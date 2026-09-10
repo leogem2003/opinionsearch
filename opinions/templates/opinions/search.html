@@ -1,5 +1,19 @@
 <title>Search opinions</title>
 
+<style>
+    /* Minimal, only what's needed to make the plot and its interactions legible. */
+    .plot-marker { cursor: pointer; stroke: #fff; stroke-width: 1; }
+    .plot-marker:hover { stroke: #000; stroke-width: 1.5; }
+    .plot-marker.selected { stroke: #d62728; stroke-width: 2.5; }
+    .query-marker { fill: #000; stroke-width: 1.5; }
+    #plot-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.5rem 0; font-size: 0.9em; }
+    #plot-legend span.swatch { display: inline-block; width: 0.8em; height: 0.8em; border-radius: 50%; margin-right: 0.3em; vertical-align: middle; }
+    #plot-legend svg.star-swatch { vertical-align: middle; margin-right: 0.3em; }
+    #opinion-detail { border: 1px solid #ccc; padding: 0.6rem 0.8rem; margin-top: 0.5rem; max-width: 40em; }
+    #opinion-detail p { margin: 0.2em 0; }
+    svg#plot { border: 1px solid #ccc; }
+</style>
+
 <h1>Search opinions</h1>
 
 <form method="get">
@@ -15,13 +29,75 @@
         <output id="max_distance_output">{{ max_distance }}</output>
     </p>
     <p>
+        <label for="n_neighbors">UMAP n_neighbors ({{ n_neighbors }}):</label>
+        <input type="range" id="n_neighbors" name="n_neighbors"
+               min="2" max="50" step="1" value="{{ n_neighbors }}"
+               oninput="document.getElementById('n_neighbors_output').textContent = this.value">
+        <output id="n_neighbors_output">{{ n_neighbors }}</output>
+        <small>local (low) &harr; global (high) structure; clamped to fewer than the number of results</small>
+    </p>
+    <p>
+        <label for="min_dist">UMAP min_dist ({{ min_dist }}):</label>
+        <input type="range" id="min_dist" name="min_dist"
+               min="0" max="0.99" step="0.01" value="{{ min_dist }}"
+               oninput="document.getElementById('min_dist_output').textContent = this.value">
+        <output id="min_dist_output">{{ min_dist }}</output>
+        <small>how tightly points may be packed</small>
+    </p>
+    <p>
         <button type="submit">Search</button>
     </p>
 </form>
 
 {% if query %}
     <h2>Results for &ldquo;{{ query }}&rdquo;</h2>
+
     {% if results %}
+        {% if points %}
+            <h3>Projection</h3>
+            <p>The plot is centered on your query (&#9733;); its closest matches land nearest to it.</p>
+            <p id="plot-legend">
+                {% if query_point %}
+                    <span>
+                        <svg class="star-swatch" width="14" height="14" viewBox="0 0 14 14">
+                            <polygon points="{{ legend_star_points }}" fill="#000"></polygon>
+                        </svg>your query
+                    </span>
+                {% endif %}
+                {% for topic in topics %}
+                    <span><span class="swatch" style="background:{{ topic.color }}"></span>{{ topic.name }}</span>
+                {% endfor %}
+            </p>
+            <svg id="plot" width="{{ plot_width }}" height="{{ plot_height }}"
+                 viewBox="0 0 {{ plot_width }} {{ plot_height }}">
+                {% for point in points %}
+                    <circle class="opinion-dot plot-marker" r="6" cx="{{ point.x }}" cy="{{ point.y }}"
+                            fill="{{ point.color }}"
+                            data-text="{{ point.text }}"
+                            data-topic="{{ point.topic }}"
+                            data-author="{{ point.author }}"
+                            data-similarity="{{ point.similarity|floatformat:4 }}"
+                            onclick="showOpinion(this)"></circle>
+                {% endfor %}
+                {% if query_point %}
+                    <polygon class="query-marker plot-marker" points="{{ query_point.star_points }}"
+                             data-text="{{ query }}"
+                             data-topic="Your search query"
+                             data-author="(this is what you typed, not a stored opinion)"
+                             data-similarity="1.0000"
+                             onclick="showOpinion(this)"></polygon>
+                {% endif %}
+            </svg>
+            <div id="opinion-detail" hidden>
+                <p><strong id="opinion-topic"></strong></p>
+                <p id="opinion-text"></p>
+                <p>by <span id="opinion-author"></span> &mdash; similarity <span id="opinion-similarity"></span></p>
+            </div>
+        {% elif too_few_to_plot %}
+            <p>Only {{ results|length }} result(s) &mdash; need at least {{ min_points_to_plot }} to plot a projection.</p>
+        {% endif %}
+
+        <h3>List</h3>
         <ul>
             {% for result in results %}
                 <li>
@@ -34,3 +110,18 @@
         <p>No opinions found in that range.</p>
     {% endif %}
 {% endif %}
+
+<script>
+    function showOpinion(circle) {
+        document.getElementById('opinion-topic').textContent = circle.dataset.topic;
+        document.getElementById('opinion-text').textContent = circle.dataset.text;
+        document.getElementById('opinion-author').textContent = circle.dataset.author;
+        document.getElementById('opinion-similarity').textContent = circle.dataset.similarity;
+        document.getElementById('opinion-detail').hidden = false;
+
+        document.querySelectorAll('.plot-marker.selected').forEach(function (marker) {
+            marker.classList.remove('selected');
+        });
+        circle.classList.add('selected');
+    }
+</script>
