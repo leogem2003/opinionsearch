@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Early stage. The database layer is built: PostgreSQL with PostGIS and pgvector is wired up, the models from `design.md` exist in the `opinions` app, and migrations are applied. Publishing an opinion now generates its embedding (`opinions/embedding.py`, BGE-M3 via FlagEmbedding). A first cut of search exists at `/search/` (see Architecture below) — plain Django template, no CSS, no clustering/projection yet. There's a real test suite (`opinions/tests/`) exercising it. A Docker Compose setup (`docker-compose.yml`, `docker/`) ships this same state as containers for local use — see Commands below. `design.md` is still the specification being built toward, so read it before adding features and keep it in sync when the design changes.
+Early stage. The database layer is built: PostgreSQL with PostGIS and pgvector is wired up, the models from `design.md` exist in the `opinions` app, and migrations are applied. Publishing an opinion now generates its embedding (`opinions/embedding.py`, BGE-M3 via FlagEmbedding). A first cut of search exists at `/search/` (see Architecture below) — plain Django template, no CSS, no clustering yet; the 2D projection is being prototyped in `notebooks/umap_projection.ipynb`, not in the app. There's a real test suite (`opinions/tests/`) exercising it. A Docker Compose setup (`docker-compose.yml`, `docker/`) ships this same state as containers for local use — see Commands below. `design.md` is still the specification being built toward, so read it before adding features and keep it in sync when the design changes.
 
 ## Commands
 
@@ -17,6 +17,7 @@ uv run python manage.py makemigrations    # after model changes
 uv run python manage.py migrate           # apply migrations
 uv run python manage.py createsuperuser   # for /admin
 uv run black .                            # format
+uv run jupyter lab                        # notebooks/ (UMAP projection experiment)
 ```
 
 Local admin login is `admin` / `admin` — development only; never carry it into a deployed instance.
@@ -62,17 +63,19 @@ All of this lives in the `opinions` app (`opinions/models.py`):
 Opinion now holds both its text and embedding directly; there is no separate OpinionEmbedding model.
 
 - **Write path** (publishing an opinion) — **implemented**: `Opinion.save()` (`opinions/models.py`) embeds `self.text` via `opinions/embedding.py` and stores the vector directly on the `Opinion` row, all before the row is written — so a plain `Opinion.objects.create(...)` already does the right thing, no separate call needed. It only runs once, on creation (`embedding is None`); editing an opinion's text afterward does not re-embed it. Clustering ("update clusters" in design.md) is not implemented — new opinions are created with `cluster=None`.
-- **Read path** (search) — **not implemented**: embed the user's keywords → the vector extension matches that embedding to the top-K closest clusters and applies a UMAP projection into 2D, returning `(vectorID, projection_coords)` → the relational side joins on vector ID, **then** applies the time and location filters directly against `Opinion.timestamp` and `Opinion.geo_coordinates`, returning text, timestamp, geo_coordinates, projection coordinates, and cluster_id.
+- **Read path** (search) — **partially implemented** at `/search/`. The query itself lives in `opinions/search.py`, deliberately apart from the view: `search_opinions(query, max_distance)` embeds the typed statement (with the same *document* embedder used for stored opinions, so searching an opinion's exact text reproduces its exact vector), annotates every `Opinion` with `CosineDistance("embedding", ...)`, filters to `distance <= max_distance + DISTANCE_EPSILON` and orders nearest-first, returning a lazy annotated `QuerySet`. `opinions/views.py` is then only request parsing and rendering. Anything needing the page's result set outside a request (the projection notebook below) imports `search_opinions` instead of rebuilding a look-alike query. **Still missing** from design.md's read path: the top-K closest-clusters lookup, the UMAP 2D projection, and the time/location filters against `Opinion.timestamp`/`geo_coordinates` — today's search is a full-table cosine scan with no clustering step in front of it.
 
 `opinions/embedding.py` wraps `FlagEmbedding.FlagAutoModel.from_finetuned("BAAI/bge-m3", ...)`. `get_embedder()` is `lru_cache`d so the (multi-GB) model loads once per process, lazily on first use — never at import time, so `manage.py check`/migrations/etc. stay fast. `embed_text()` calls `embed_texts()` for a single string; `embed_texts()` does the real `encode_corpus` call (no query instruction — opinions are indexed documents, not search queries) and is what to use whenever more than one text needs embedding at once (e.g. loading a fixture), since one batched encoder call is much cheaper than one call per text. The read path above is what will eventually use `encode_queries` and the `query_instruction_for_retrieval` already configured on the same embedder.
 
 The 2D projection coordinates design.md describes exist to drive the client-side visualization of the opinion space, which is the product's core feature — the current `/search/` page is plain text output, not that visualization.
 
+`notebooks/umap_projection.ipynb` is where that projection is being tried out before it goes anywhere near the app: it boots Django against the **development** database, loads `opinions/tests/fixtures/sample_opinions.json` into it (only removing rows whose text is in the fixture, so hand-made dev opinions survive), calls `search_opinions` with a query and slider value, and runs `umap.UMAP(n_components=2, metric="cosine", ...)` over the matched embeddings — `metric="cosine"` to match `CosineDistance` and the `vector_cosine_ops` HNSW index rather than UMAP's `euclidean` default. It ends with a parameter sweep and a corpus-wide fit that highlights one search, since fitting UMAP per search would give coordinates that can't be compared between searches. Caveat recorded in the notebook: the fixture is 16 statements, below the size where `n_neighbors` is meaningful (it can't exceed `n_samples - 1`), so the parameters need re-tuning against a real corpus. `umap-learn`, `matplotlib` and `jupyterlab` are in the **dev** group only — nothing the app serves imports them yet.
+
 ## Not yet wired up
 
 - `python-dotenv` now loads `.env`, but only the database settings read from it. `SECRET_KEY` is still the hardcoded insecure default and `DEBUG = True`; move both to the environment before any deployment.
 - `django-debug-toolbar` is installed but absent from `INSTALLED_APPS` and `MIDDLEWARE`.
-- No clustering/UMAP library is in `pyproject.toml` yet, and there's no re-clustering step anywhere. `Opinion.cluster` is always `None` right now. The read path (search) is entirely unimplemented — the schema and the embedder are both ready for it.
+- No clustering step exists anywhere and `Opinion.cluster` is always `None`. `umap-learn` is installed (dev group) and exercised in `notebooks/umap_projection.ipynb`, but nothing persists projection coordinates — there's no field for them on `Opinion` yet, and the app itself never imports UMAP.
 - `opinions.User` has no signup/login flow of its own yet (it's not wired to Django auth at all); creating one is just `User.objects.create(username=...)` for now.
 
 ## Gotchas
