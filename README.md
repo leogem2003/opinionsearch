@@ -7,6 +7,8 @@ TODO: screeshots
 2. Filter by categories, location and time
    
 # Setup
+> [!NOTE]  
+> This is only meant for **development** and not suitable for production.
 
 ## Dependincies
 - `python3` with Astral `uv`
@@ -21,6 +23,10 @@ uv run python manage.py runserver
 ```
 
 ## Docker
+> [!WARNING]  
+> The default managemant user will be `admin`, passwd:`admin` and runs the **development server**
+
+
 Start the Django webapp
 ```bash
 docker compose up --build
@@ -49,5 +55,17 @@ uv run jupyter lab
 1. Since this is a website, it is centralized and controlled by a single entity
 2. There is currently no bot protection implemented to prevent inauthentic behavior
 3. Language always is ambiguous to some degree
+4. The embeddings can also pick up sentiment, topics might also include sentiment, e.g. "I hate cars" close to "I hate cheese", even though they're unrelated.
 ## License
 See [LICENSE.txt](LICENSE.txt)
+
+
+## Acknowledgement
+#### Inspirations: 
+- [github.com/Carbon-copy-PS/murmi](https://github.com/Carbon-copy-PS/murmi)
+- Lectures by *Herr Prof. Dr Helbing Dirk* and many others from the course *Hacking Democracy: Co-Creating Innovative Tools for Participatory Politics HS2026* at ETHZ Zurich
+
+### Developers
+- [@leogem2003](https://github.com/leogem2003), architecture design design, prompt engineering, programming
+- [@ttlns](https://github.com/leogem2003), code review, testing, bugfix
+- [@galtendorfer][https://github.com/galtendorfer] Initial frontent draft, presentation

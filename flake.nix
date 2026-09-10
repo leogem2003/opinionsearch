@@ -33,7 +33,7 @@
             
             shellHook = ''
               export UV_PYTHON_PREFERENCE="system"
-              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath (with pkgs; [ gdal geos proj ])}:$LD_LIBRARY_PATH"
+              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath (with pkgs; [ stdenv.cc.cc.lib zlib gdal geos proj ])}:$LD_LIBRARY_PATH"
               
               # --- PostgreSQL Setup ---
               
