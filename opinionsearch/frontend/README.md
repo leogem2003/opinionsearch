@@ -15,7 +15,7 @@ npm run dev:demo
 
 Open `http://localhost:5174`. This project uses a fixed development port and stops if it is occupied, rather than silently moving to another port. The input and saved-text page explicitly say **Demo**. Submitted text is stored only in the current browser tab's session storage. It does not reach a server or join the example discussions. This mode demonstrates the interaction; it is not durable storage or a security implementation.
 
-The **Opinions** tab on Home and Explore searches the OpinionSearch backend. The **Example data** option contains separate, hand-authored discussions and visualisations. Search opens a selectable Positive / Negative / Neutral sentiment overview with original opinions below it, using the example page’s visual style. Unscored results stay separate. Sentiment is tone, not agreement; the live topic index groups opinions using an editable civic catalogue. Automatic discussion grouping and topic-specific stance analysis remain deferred.
+The **Opinions** tab on Home and Explore searches the OpinionSearch backend. The **Example data** option contains separate, hand-authored discussions and visualisations. Search opens a selectable Positive / Negative / Neutral sentiment overview with original opinions below it, using the example page’s visual style. Unscored results stay separate. Sentiment is tone, not agreement; the live topic index groups opinions using an editable civic catalogue. Batch EVōC discovery is available in the backend and Django search page; React views for discovered clusters and topic-specific stance analysis remain deferred.
 
 ## Page map
 

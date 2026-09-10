@@ -39,6 +39,21 @@
         <small>how tightly points may be packed</small>
     </p>
     <p>
+        <label for="topic_level">Topic level ({{ topic_level }}):</label>
+        <input type="range" id="topic_level" name="topic_level"
+               min="0" max="{{ max_topic_level }}" step="1" value="{{ topic_level }}"
+               {% if not has_topics %}disabled{% endif %}
+               oninput="document.getElementById('topic_level_output').textContent = this.value">
+        <output id="topic_level_output">{{ topic_level }}</output>
+        <small>
+            {% if has_topics %}
+                0 = narrowest discovered topics, {{ max_topic_level }} = broadest
+            {% else %}
+                no topics discovered yet &mdash; run <code>manage.py recluster</code>
+            {% endif %}
+        </small>
+    </p>
+    <p>
         <button type="submit">Search</button>
     </p>
 </form>
@@ -57,13 +72,17 @@
 
         {% if plot_data %}
             <h3>Projection</h3>
-            <p>The plot is centered on your query (the star marker); its closest matches land nearest to it.</p>
+            <p>
+                The plot is centered on your query (the star marker); its closest matches land nearest to it.
+                Colours are the topics discovered at level {{ topic_level }} of the hierarchy.
+            </p>
             <div id="scatter-chart-wrapper"><canvas id="scatter-chart"></canvas></div>
             <div id="opinion-detail" hidden>
                 <p><strong id="opinion-topic"></strong></p>
                 <p id="opinion-text"></p>
                 <p>by <span id="opinion-author"></span> &mdash; similarity <span id="opinion-similarity"></span></p>
                 <p>sentiment: <span id="opinion-sentiment"></span></p>
+                <p>topic path (narrow &rarr; broad): <span id="opinion-topic-path"></span></p>
             </div>
         {% elif too_few_to_plot %}
             <p>Only {{ results|length }} result(s) &mdash; need at least {{ min_points_to_plot }} to plot a projection.</p>
@@ -101,6 +120,13 @@
                 function showOpinion(point) {
                     document.getElementById('opinion-topic').textContent =
                         point.is_query ? 'Your search query' : point.topic;
+                    // The whole discovered hierarchy for this opinion, not just
+                    // the layer currently being coloured by.
+                    document.getElementById('opinion-topic-path').textContent = point.is_query
+                        ? 'n/a — not a stored opinion'
+                        : (point.topics || []).map(function (t) {
+                              return 'L' + t.layer + ': ' + (t.label || '?');
+                          }).join('  →  ') || 'unclustered';
                     document.getElementById('opinion-text').textContent = point.text;
                     document.getElementById('opinion-author').textContent = point.is_query
                         ? '(this is what you typed, not a stored opinion)'

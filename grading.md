@@ -10,10 +10,10 @@ Q: User agreement/TOS
 - [ ] ~~embedding async~~
 - [x] delete embedding on oppinion delete
 - [x] Check search caching, 5-point star rendering
-- [ ] Implement clustering, extract topic foreach cluster using fasttopic -> set umap parameters based on clusters automatically
+- [x] Query should include sentiment too
+- [ ] Implement clustering, extract topic foreach cluster ~~using fasttopic~~ -> set umap parameters based on clusters automatically
 - [ ] where to get smartvote data from? => generate statements & arguments using python script
 - [ ] Add sentiment input value [-1,1] (how much do I agree with statement), multiply by sentiment analysis on statement
 
 - [ ] Move docker file to alpine linux, current setup looks like a mess (claude code -_-)
 - [ ] political (instead of) map for location selection
-- [ ] Query should include sentiment too

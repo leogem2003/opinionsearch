@@ -1,12 +1,12 @@
-import hashlib
-import math
 import colorsys
+import hashlib
 
 import numpy as np
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
+from .clustering import layer_count
 from .projection import (
     MIN_POINTS_TO_PROJECT,
     parse_min_dist,
@@ -18,14 +18,15 @@ from .sentiment import SENTIMENT_LABELS, sentiment_label
 from .models import Opinion
 from .topic_classification import TOPIC_IDS, TOPICS
 
+# Shown for an opinion the clustering left as noise at the chosen layer, or
+# one published since the last clustering run. Not a topic, but it has to be
+# drawn as one so those opinions still appear on the plot.
+UNCLUSTERED_LABEL = "unclustered"
+
 # A little headroom around the query on the scatter chart's axes, so the
 # single farthest point doesn't sit exactly on the edge -- see _build_plot_data.
 AXIS_PADDING_FACTOR = 1.1
 
-# Size of the star marking the query itself (see _star_points), and of its
-# smaller copy drawn in the legend.
-QUERY_MARKER_RADII = (12, 5)
-LEGEND_STAR_RADII = (6, 2.5)
 SEARCH_LIMIT = 50
 
 
@@ -66,7 +67,9 @@ def search_api(request):
                     str(item.contribution_id) if item.contribution_id else None
                 ),
                 "text": item.text,
-                "topic": item.topic,
+                # Compatibility with the React contract; use `topics` for
+                # civic categories. The legacy model field was removed.
+                "topic": "",
                 "distance": float(item.distance) if query else None,
                 "similarity": 1 - float(item.distance) if query else None,
                 "sentiment": item.sentiment,
@@ -104,6 +107,8 @@ def search(request):
     max_distance = parse_max_distance(request.GET.get("max_distance"))
     n_neighbors = parse_n_neighbors(request.GET.get("n_neighbors"))
     min_dist = parse_min_dist(request.GET.get("min_dist"))
+    n_layers = layer_count()
+    topic_level = _parse_topic_level(request.GET.get("topic_level"), n_layers)
 
     results = []
     plot_data = None
@@ -119,13 +124,15 @@ def search(request):
 
         # Drop each row's embedding for the plain-text results list below --
         # it's only needed for the projection, computed separately below.
-        # The sentiment label is added here rather than stored on the row:
-        # it's a display concern derived from the stored 1-5 score, the same
-        # way "similarity" is derived from "distance".
+        # The sentiment and topic labels are added here rather than stored on
+        # the row: both are display concerns derived from what is stored (a
+        # 1-5 score, a whole topic path), the same way "similarity" is derived
+        # from "distance".
         results = [
             {
                 **{k: v for k, v in row.items() if k != "embedding"},
                 "sentiment_label": sentiment_label(row["sentiment"]),
+                "topic": _topic_at(row, topic_level),
             }
             for row in rows
         ]
@@ -139,6 +146,7 @@ def search(request):
                 query_sentiment_label,
                 n_neighbors,
                 min_dist,
+                topic_level,
             )
         else:
             too_few_to_plot = bool(rows)
@@ -153,6 +161,9 @@ def search(request):
             "min_dist": min_dist,
             "results": results,
             "plot_data": plot_data,
+            "topic_level": topic_level,
+            "max_topic_level": max(n_layers - 1, 0),
+            "has_topics": n_layers > 0,
             "query_sentiment": query_sentiment,
             "query_sentiment_label": query_sentiment_label,
             "sentiment_labels": SENTIMENT_LABELS,
@@ -170,6 +181,7 @@ def _build_plot_data(
     query_sentiment_label,
     n_neighbors,
     min_dist,
+    topic_level,
 ):
     """Project ``rows``' embeddings and the query to 2D for Chart.js's scatter chart.
 
@@ -196,7 +208,8 @@ def _build_plot_data(
             "x": float(x),
             "y": float(y),
             "text": row["text"],
-            "topic": row["topic"],
+            "topic": _topic_at(row, topic_level),
+            "topics": row["topics"],
             "author": row["author"],
             "similarity": row["similarity"],
             "sentiment": row["sentiment"],
@@ -227,11 +240,43 @@ def _build_plot_data(
             "min_y": query_y - radius,
             "max_y": query_y + radius,
         },
+        # One entry per topic present at the chosen layer, for Chart.js to
+        # turn into one dataset each (which is also what draws the legend).
         "topics": [
             {"name": topic, "color": _topic_color(topic)}
-            for topic in sorted({row["topic"] for row in rows})
+            for topic in sorted({point["topic"] for point in points})
         ],
     }
+
+
+def _parse_topic_level(raw_value, n_layers):
+    """Coerce the topic-level slider into a layer of the stored hierarchy.
+
+    0 is the finest layer, higher numbers are broader topics -- the same
+    direction as ``Cluster.layer``. Clamped to what has actually been
+    discovered, so a stale bookmark can't ask for a layer that no longer
+    exists after re-clustering.
+    """
+    try:
+        value = int(float(raw_value))
+    except (TypeError, ValueError):
+        return 0
+    return min(max(value, 0), max(n_layers - 1, 0))
+
+
+def _topic_at(row, topic_level):
+    """The label of ``row``'s topic at ``topic_level``.
+
+    An opinion is missing from a layer it was noise in, and its path can be
+    shorter than the hierarchy is deep, so this looks the layer up rather than
+    indexing -- falling back to UNCLUSTERED_LABEL rather than to a
+    neighbouring layer, since showing a broader topic in a finer layer's place
+    would misrepresent what the clustering actually found.
+    """
+    for topic in row["topics"]:
+        if topic["layer"] == topic_level:
+            return topic["label"] or f"topic {topic_level}"
+    return UNCLUSTERED_LABEL
 
 
 def _topic_color(topic, num_hues=24):

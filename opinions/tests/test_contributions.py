@@ -11,10 +11,11 @@ from threading import Barrier
 from unittest.mock import Mock
 
 import pytest
+from django.core.cache import cache
 from django.db import DatabaseError, connections
 from django.test import Client
 
-from opinions.models import Contribution, Opinion
+from opinions.models import Cluster, Contribution, Opinion
 from opinions.pipeline import index_contribution
 
 URL = "/api/v1/contributions/"
@@ -93,7 +94,7 @@ def test_create_indexes_exact_original_text_without_cookies(embedding):
     opinion = Opinion.objects.get(contribution=source)
     assert opinion.text == source.text
     assert opinion.author is None
-    assert opinion.topic == ""
+    assert not opinion.clusters.exists()
     assert opinion.sentiment == 4
     assert list(opinion.embedding) == VECTOR
     embedding.assert_called_once_with(text)
@@ -374,3 +375,45 @@ def test_topic_failure_preserves_source_and_retry_completes_it(client, monkeypat
     assert create(client).status_code == 200
     assert Opinion.objects.filter(contribution=source).count() == 1
     assert classifier.call_count == 2
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("clustered", [False, True])
+def test_anonymous_input_keeps_categories_and_source_when_clusters_are_added(
+    client, monkeypatch, clustered
+):
+    Opinion.objects.all().delete()
+    Cluster.objects.all().delete()
+    cache.clear()
+    monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
+    monkeypatch.setattr("opinions.search.score_text", Mock(return_value=4))
+    receipt = create(client).json()
+    opinion = Opinion.objects.get(contribution_id=receipt["id"])
+    if clustered:
+        cluster = Cluster.objects.create(
+            layer=0,
+            evoc_id=0,
+            label="rent, tenants",
+            centroid=VECTOR,
+            size=1,
+            exemplar=opinion,
+        )
+        opinion.clusters.add(cluster)
+
+    html = client.get("/search/", {"query": opinion.text})
+    assert html.status_code == 200
+    row = html.context["results"][0]
+    assert row["author"] is None
+    assert row["topic"] == ("rent, tenants" if clustered else "unclustered")
+    assert row["topics"] == (
+        [{"layer": 0, "label": "rent, tenants"}] if clustered else []
+    )
+    result = client.get("/api/v1/opinions/", {"topic": "housing"}).json()[
+        "results"
+    ][0]
+    assert result["topic"] == ""
+    assert result["topics"] == [{"id": "housing", "title": "Housing"}]
+    assert result["contributionId"] == receipt["id"]
+    assert result["text"] == opinion.text
+    assert read(client, receipt).status_code == 200
+    cache.clear()

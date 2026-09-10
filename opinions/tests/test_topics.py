@@ -89,7 +89,6 @@ def test_backfill_is_repeatable_and_all_replaces_only_topic_analysis(
         [
             Opinion(
                 text="Original input",
-                topic="Legacy label",
                 embedding=VECTOR,
                 sentiment=4,
             )
@@ -104,8 +103,7 @@ def test_backfill_is_repeatable_and_all_replaces_only_topic_analysis(
     call_command("backfill_topics", all=True)
     item.refresh_from_db()
     assert item.topic_ids == ["transport"]
-    assert (item.text, item.topic, item.sentiment) == (
+    assert (item.text, item.sentiment) == (
         "Original input",
-        "Legacy label",
         4,
     )

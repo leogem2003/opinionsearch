@@ -45,9 +45,7 @@ class Migration(migrations.Migration):
                 to_field="uuid",
             ),
         ),
-        migrations.AlterField(
-            model_name="opinion",
-            name="topic",
-            field=models.CharField(blank=True, max_length=200),
-        ),
+        # The original topic blank=True alteration changed validation only
+        # (no SQL). EVōC removes that field on the sibling migration branch;
+        # omit the obsolete alteration so either upgrade order remains valid.
     ]

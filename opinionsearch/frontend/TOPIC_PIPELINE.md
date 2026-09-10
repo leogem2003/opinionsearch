@@ -16,7 +16,7 @@ Inference runs before the database write transaction in the submission pipeline.
 
 ## Stored evidence and boundaries
 
-`Opinion.topic_ids` is a PostgreSQL array with a GIN index, so a category can be filtered directly without a vector comparison. An opinion can occur in several categories, but appears once within any category. The legacy `Opinion.topic` string and `Cluster` relation remain independent; the EVōC experiment on its own branch can later provide discovered subjects beneath these categories.
+`Opinion.topic_ids` is a PostgreSQL array with a GIN index, so a category can be filtered directly without a vector comparison. An opinion can occur in several categories, but appears once within any category. EVōC independently stores discovered hierarchy memberships in `Opinion.clusters`; the legacy `Opinion.topic` field is removed. Fixed category IDs and discovered cluster IDs have separate meanings. The React topic directory uses fixed categories, while the Django search page displays discovered clusters. Linking clusters beneath civic categories remains future work.
 
 `Opinion.topic_analysis` records:
 
@@ -38,7 +38,7 @@ The UI sorts topics by number of opinions, latest contribution or title. A topic
 
 ## Operation and iteration
 
-Apply the generated `0006_opinion_topics` migration, then classify existing embedded opinions:
+Apply all migrations, including `0006_opinion_topics` and `0007_merge_frontend_evoc`, then classify existing embedded opinions:
 
 ```sh
 docker compose run --rm web uv run python manage.py backfill_topics

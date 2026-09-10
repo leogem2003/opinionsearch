@@ -18,7 +18,7 @@ This JSON view and the Django `/search/` page share the same BGE-M3 retrieval fu
       "id": "42",
       "contributionId": "6afd9045-2d94-4b9b-b728-526fd7d329b0",
       "text": "Housing costs make it difficult to live near my workplace.",
-      "topic": "Housing",
+      "topic": "",
       "distance": 0.2,
       "similarity": 0.8,
       "sentiment": 2,
@@ -31,7 +31,7 @@ This JSON view and the Django `/search/` page share the same BGE-M3 retrieval fu
 }
 ```
 
-The example is illustrative and omits the full `topicAnalysis` record, whose method, catalogue/model references, thresholds, input/vector hashes and per-topic scores are described in [TOPIC_PIPELINE.md](TOPIC_PIPELINE.md). `id` identifies the searchable opinion; `contributionId` links it to its original source, or is `null` for older/admin-created opinions without a source link. Neither is an access receipt. The legacy `topic` string remains for compatibility. `topics` contains predefined topic assignments; new inputs may match several or none. `createdAt` is the opinion creation timestamp. Topic-only browsing returns `null` for distance and similarity. Similarity is retrieval metadata, not agreement or a share of national opinion; the frontend displays original text and groups stored sentiment scores. Scores 1–2 map to **Negative**, 3 to **Neutral**, and 4–5 to **Positive**. A missing or invalid score remains **Not yet analysed**. `sentiment` is an integer from 1 to 5 or `null`; `sentimentLabel` is the backend description (`very negative`, `negative`, `neutral`, `positive`, `very positive`, or `unscored`). These are model estimates of tone, not topic-specific stance.
+The example is illustrative and omits the full `topicAnalysis` record, whose method, catalogue/model references, thresholds, input/vector hashes and per-topic scores are described in [TOPIC_PIPELINE.md](TOPIC_PIPELINE.md). `id` identifies the searchable opinion; `contributionId` links it to its original source, or is `null` for older/admin-created opinions without a source link. Neither is an access receipt. The legacy `topic` string is always empty and retained for compatibility; its model field was removed when EVōC clustering was integrated. `topics` contains predefined topic assignments; new inputs may match several or none. `createdAt` is the opinion creation timestamp. Topic-only browsing returns `null` for distance and similarity. Similarity is retrieval metadata, not agreement or a share of national opinion; the frontend displays original text and groups stored sentiment scores. Scores 1–2 map to **Negative**, 3 to **Neutral**, and 4–5 to **Positive**. A missing or invalid score remains **Not yet analysed**. `sentiment` is an integer from 1 to 5 or `null`; `sentimentLabel` is the backend description (`very negative`, `negative`, `neutral`, `positive`, `very positive`, or `unscored`). These are model estimates of tone, not topic-specific stance.
 
 Selecting a chart group filters the original opinions. Each dot represents one returned opinion; its position is decorative, not a UMAP coordinate or a distance measurement. Counts cover these matches only, not unique people or the national population. The API returns no embedding vectors or projection coordinates.
 

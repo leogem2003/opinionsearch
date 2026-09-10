@@ -5,6 +5,8 @@ TODO: screeshots
 
 1. Discover and visualize other opinions
 2. Filter by categories, location and time
+3. Topics are discovered automatically by clustering the opinion embeddings
+   (EVōC), at several levels of granularity — nobody tags an opinion by hand
    
 # Setup
 > [!NOTE]  
@@ -20,6 +22,12 @@ See [flake.nix](flake.nix) for initial postgresql setup.
 (Dev server)
 ```bash
 uv run python manage.py runserver 
+```
+
+Topics are discovered from the corpus rather than typed in, so after loading or
+publishing a batch of opinions, rediscover them with:
+```bash
+uv run python manage.py recluster
 ```
 
 ## Docker
@@ -66,6 +74,7 @@ See [LICENSE.txt](LICENSE.txt)
 #### Inspirations: 
 - [github.com/Carbon-copy-PS/murmi](https://github.com/Carbon-copy-PS/murmi)
 - Lectures by *Herr Prof. Dr Helbing Dirk* and many others from the course *Hacking Democracy: Co-Creating Innovative Tools for Participatory Politics HS2026* at ETHZ Zurich
+- [pol.is](https://pol.is/) as inspiration
 
 ### Developers
 - [@leogem2003](https://github.com/leogem2003), architecture design design, prompt engineering, programming

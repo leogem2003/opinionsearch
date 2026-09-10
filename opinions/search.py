@@ -77,12 +77,15 @@ def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
 
     Returns a dict with:
 
-    - ``rows``: a list of plain dicts (id, text, topic, author, distance,
+    - ``rows``: a list of plain dicts (id, text, topics, author, distance,
       similarity, sentiment, embedding) instead of ``search_opinions``'s lazy
       annotated QuerySet, since a QuerySet can't survive a round trip through
       the cache. ``sentiment`` is the raw 1-5 score stored on the Opinion (see
       ``opinions.sentiment``), not yet turned into a label -- that's a display
-      concern, left to whatever renders these rows.
+      concern, left to whatever renders these rows. ``topics`` is the row's
+      whole discovered topic path (see ``_topic_path``) rather than one topic,
+      so that changing which layer of the hierarchy the page shows doesn't
+      have to invalidate this cache.
     - ``query_embedding``: the query's own embedding, cached alongside the
       rows for the same reason -- ``opinions.projection`` plots the query
       itself next to its matches, and shouldn't need to re-embed the query
@@ -97,14 +100,19 @@ def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
     if cached is None:
         query_embedding = embed_text(query)
         query_sentiment = score_text(query)
-        opinions = search_opinions(
-            query, max_distance, query_embedding=query_embedding
-        ).select_related("author")
+        opinions = (
+            search_opinions(
+                query, max_distance, query_embedding=query_embedding
+            ).select_related("author")
+            # One extra query for every row's cluster memberships, rather than
+            # one per row while building the topic list below.
+            .prefetch_related("clusters")
+        )
         rows = [
             {
                 "id": opinion.id,
                 "text": opinion.text,
-                "topic": opinion.topic,
+                "topics": _topic_path(opinion),
                 "author": opinion.author.username if opinion.author_id else None,
                 "distance": float(opinion.distance),
                 "similarity": 1 - float(opinion.distance),
@@ -120,6 +128,23 @@ def search_opinions_cached(query, max_distance=DEFAULT_MAX_DISTANCE):
         }
         cache.set(key, cached, SEARCH_CACHE_TTL)
     return cached
+
+
+def _topic_path(opinion):
+    """This opinion's discovered topics, finest layer first.
+
+    Returns ``[{"layer": 0, "label": "rent, tenants, ..."}, ...]``, one entry
+    per layer of the hierarchy the opinion was placed in (see
+    ``opinions.clustering``). Layers where it came out as noise are simply
+    missing, so this can be shorter than the hierarchy is deep -- or empty,
+    for an opinion published since the last clustering run.
+    """
+    return [
+        {"layer": cluster.layer, "label": cluster.label}
+        # Sorted in Python, not the database: the memberships are already
+        # prefetched, and re-ordering them would re-query per row.
+        for cluster in sorted(opinion.clusters.all(), key=lambda c: c.layer)
+    ]
 
 
 def parse_max_distance(raw_value, default=DEFAULT_MAX_DISTANCE):

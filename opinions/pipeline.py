@@ -53,7 +53,6 @@ def index_contribution(contribution):
         contribution=contribution,
         defaults={
             "text": contribution.text,
-            "topic": "",
             "embedding": embedding,
             "sentiment": sentiment,
             "topic_ids": topic_ids,

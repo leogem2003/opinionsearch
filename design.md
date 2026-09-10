@@ -7,17 +7,30 @@ Postgre with pgvector for vector DB, postGIS for geo data.
     - Tables
         - User: username, uuid.
         - Contribution: UUID, original text, creation time, declared visibility, unique submission-key hash, private access receipt.
-        - Opinion: text, optional topic and author, embedding, timestamp, geo_coordinates, optional unique link to the original Contribution, indexed topic IDs and an inspectable topic-classification record. Anonymous submissions do not create a fictitious user.
+        - Opinion: text, optional author, embedding, sentiment, timestamp, geo_coordinates, optional unique link to the original Contribution, indexed civic topic IDs and an inspectable classification record. Anonymous submissions do not create a fictitious user.
         - Argument: text, Opinion.pk
+        - Cluster: layer, evoc_id, parent (self), label, centroid, size, exemplar (Opinion).
+        - Opinion/Cluster membership: one cluster per hierarchy layer the opinion falls in.
 - pgvector extension:
-    - Opinions embeddings (VectorID) 
-    - Clusters
+    - Opinions embeddings (VectorID)
+    - Cluster centroids
+
+Predefined civic categories are stored in `Opinion.topic_ids`. Separately,
+EVōC discovers clusters from the opinion embeddings and stores memberships in
+`Opinion.clusters`. No category-to-cluster mapping is inferred by this merge.
+The clustering is hierarchical: several nested
+resolutions exist at once, layer 0 being the narrowest, and an opinion can be
+noise (in no cluster) at one layer while belonging to a broader one above it,
+which is why membership is many-to-many rather than a single foreign key.
 
 ### Inference
 - Embedding (BGE-M3)
 - Sentiment (nlptown multilingual 1–5 score)
 - Predefined civic topics: reuse each opinion’s BGE-M3 vector to match versioned descriptions; retain several strong matches or none. See [topic pipeline](opinionsearch/frontend/TOPIC_PIPELINE.md).
-- UMAP projection on the Django search page; persistent vector clustering is deferred.
+- Hierarchical vector clustering (EVōC) for topic discovery
+- Cluster labelling from the member texts (class-based TF-IDF, plus a medoid
+  exemplar quote): EVōC outputs cluster ids only, never words.
+- UMAP projection on the Django search page; coordinates are not persisted.
 
 ## UX
 ### Describing an issue — implemented
@@ -36,8 +49,11 @@ A user publishes an opinion.
 An opinion can have some arguments.
 The opinion text is fed into the embedding.
 The opinion embedding is stored in the vector DB.
-Clusters are updated.
+The opinion text is also scored for sentiment.
 The vector ID is added to the opinion row.
+Predefined categories are assigned at submission time. Discovered clusters
+are updated separately with `manage.py recluster`, a whole-corpus operation.
+A new opinion has no discovered cluster memberships until that command runs.
 
 ### Browsing topics
 `GET /api/v1/topics/` lists the fixed catalogue with stored membership counts and latest contribution times. `GET /api/v1/opinions/?topic=housing` returns the newest 50 opinions assigned to that topic without running a model. A topic may contain overlapping opinions; totals are submissions, not unique people. The live React path is Home → Topics → Topic sentiment and original opinions. Example discussions remain separate.
@@ -50,4 +66,5 @@ An user inputs some keywords, maximum similarity distance [0,1] and optionally f
 The embedder parses the keywords.
 Filter for maximum similarity distance to keyword embedding and filters.
 The vector extension applies UMAP projection in a 2D space, returns vectorID and projection coordinates.
-The relational DB joins the vector IDs with the opinions, applies filters, and returns text, timestamp, geo_coordinates, projection coordinates.
+The relational DB joins the vector IDs with the opinions, applies filters, and returns text, timestamp, geo_coordinates, projection coordinates, sentiment, and the opinion's topic at each layer of the hierarchy.
+The user picks which layer of the topic hierarchy the results are grouped by: the narrowest discovered topics, or progressively broader ones.
