@@ -81,6 +81,34 @@ def test_results_are_sorted_by_ascending_distance(client, search_url):
 
 
 @pytest.mark.django_db
+def test_results_carry_a_discovered_topic_at_the_requested_level(client, search_url):
+    # Topics aren't stored on the opinion any more -- they come from the
+    # hierarchy conftest.py clusters into existence (opinions/clustering.py),
+    # and the topic_level slider picks which layer of it the page shows.
+    query_text = STATEMENTS[3]["text"]
+
+    fine = client.get(
+        search_url, {"query": query_text, "max_distance": "1", "topic_level": "0"}
+    )
+    broad = client.get(
+        search_url, {"query": query_text, "max_distance": "1", "topic_level": "9"}
+    )
+
+    assert fine.context["topic_level"] == 0
+    # Clamped to the deepest layer that actually exists.
+    assert broad.context["topic_level"] == broad.context["max_topic_level"]
+    assert broad.context["max_topic_level"] > 0
+
+    for result in fine.context["results"]:
+        assert result["topic"]
+        assert isinstance(result["topics"], list)
+
+    fine_topics = {result["topic"] for result in fine.context["results"]}
+    broad_topics = {result["topic"] for result in broad.context["results"]}
+    assert len(broad_topics) < len(fine_topics), (fine_topics, broad_topics)
+
+
+@pytest.mark.django_db
 def test_results_carry_a_scored_sentiment_and_matching_label(client, search_url):
     # The fixture is loaded via load_opinions_fixture (see conftest.py),
     # which -- like Opinion.save() -- scores sentiment for every opinion it
