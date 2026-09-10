@@ -1,0 +1,98 @@
+{
+  "version": "civic-topics-v1",
+  "minimumSimilarity": 0.52,
+  "topics": [
+    {
+      "id": "housing",
+      "title": "Housing",
+      "description": "Homes, rents, housing supply and affordability.",
+      "examples": [
+        "Housing affordability: rents, mortgages, tenants, landlords, apartment prices and housing supply.",
+        "Residential construction, social housing, home ownership and rental accommodation."
+      ]
+    },
+    {
+      "id": "immigration",
+      "title": "Immigration",
+      "description": "Migration, asylum, integration and citizenship.",
+      "examples": [
+        "Immigration, migrants, asylum seekers, refugees, borders and residence permits.",
+        "Citizenship, naturalisation, integration and migration between countries."
+      ]
+    },
+    {
+      "id": "transport",
+      "title": "Transport",
+      "description": "Public transport, roads, cycling and mobility.",
+      "examples": [
+        "Public transport, buses, railways, trains, timetables, fares and commuting.",
+        "Roads, traffic congestion, parking, cycle lanes, walking and mobility."
+      ]
+    },
+    {
+      "id": "healthcare",
+      "title": "Healthcare",
+      "description": "Medical care, health insurance and wellbeing.",
+      "examples": [
+        "Healthcare, doctors, nurses, hospitals, medical treatment and health insurance.",
+        "Mental health services, nursing homes, elderly care, medical costs and patient care."
+      ]
+    },
+    {
+      "id": "education",
+      "title": "Education",
+      "description": "Schools, teachers, training and universities.",
+      "examples": [
+        "Education, schools, teachers, pupils, classrooms and school resources.",
+        "Universities, students, tuition fees, vocational training, apprenticeships and adult learning."
+      ]
+    },
+    {
+      "id": "economy",
+      "title": "Economy & work",
+      "description": "Jobs, wages, taxes, businesses and living costs.",
+      "examples": [
+        "Employment, wages, labour conditions, unemployment and workers.",
+        "Economic policy, inflation, taxation, business, trade and living costs."
+      ]
+    },
+    {
+      "id": "environment",
+      "title": "Environment & energy",
+      "description": "Climate, nature, pollution and energy supply.",
+      "examples": [
+        "Environment, climate change, carbon emissions, pollution, biodiversity and nature conservation.",
+        "Energy, electricity prices, renewable power, nuclear energy and fossil fuels."
+      ]
+    },
+    {
+      "id": "safety",
+      "title": "Safety",
+      "description": "Crime, policing, emergency services and security.",
+      "examples": [
+        "Public safety, crime, burglary, policing, violence and law enforcement.",
+        "Security, national defence, emergency services, fire brigades and disaster response."
+      ]
+    },
+    {
+      "id": "governance",
+      "title": "Government & democracy",
+      "description": "Public services, institutions, rights and participation.",
+      "examples": [
+        "Government, elections, voting, democracy, political participation and transparency.",
+        "Public administration, corruption, civil rights, institutions and government services."
+      ]
+    },
+    {
+      "id": "everyday-life",
+      "title": "Everyday life",
+      "description": "Food, shopping, leisure, culture and daily experiences.",
+      "examples": [
+        "Food, drinks, coffee, tea, restaurants, shopping and consumer experiences.",
+        "Leisure, sports, arts, culture, community events, hobbies and everyday preferences."
+      ]
+    }
+  ],
+  "maximumScoreGap": 0.08,
+  "minimumSecondarySimilarity": 0.58
+}

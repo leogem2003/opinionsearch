@@ -1,0 +1,23 @@
+{% extends "opinions/base.html" %}
+{% block title %}{{ topic.title }} — HiveMind{% endblock %}
+{% block page_variant %}exploration-shell{% endblock %}
+{% block content %}
+<main class="exploration-container exploration-main topic-page" id="main-content">
+  <nav class="page-breadcrumb" aria-label="Breadcrumb"><a href="/topics/">Topics</a><span aria-hidden="true">&rsaquo;</span><span aria-current="page">{{ topic.title }}</span></nav>
+  <header class="topic-heading">
+    <p class="topic-dataset">Public opinions</p>
+    <h1>{{ topic.title }}</h1>
+    <p>{{ topic.description }}</p>
+  </header>
+  <div class="opinion-search">
+    {% if results %}
+      {% include "opinions/_sentiment_breakdown.html" %}
+    {% else %}
+      <div class="search-no-results" role="status">
+        <h2>No opinions in this topic yet</h2>
+        <a class="civic-text-button" href="/#share-issue">Share an issue &rarr;</a>
+      </div>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

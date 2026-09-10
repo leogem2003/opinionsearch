@@ -26,6 +26,5 @@ Q: User agreement/TOS
 - [ ] Move docker file to alpine linux, current setup looks like a mess (claude code -_-)
 - [ ] political (instead of) map for location selection
 
-
 ## Requirements
 - Neater UI

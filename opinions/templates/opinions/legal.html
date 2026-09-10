@@ -1,0 +1,20 @@
+{% extends "opinions/base.html" %}
+{% block title %}{{ page.title }} — HiveMind{% endblock %}
+{% block content %}
+<main class="legal-main" id="main-content">
+  <nav class="legal-document-nav" aria-label="Prototype information">
+    <a href="/privacy-policy/" {% if doc == "privacy" %}aria-current="page"{% endif %}>Privacy</a>
+    <a href="/terms-and-conditions/" {% if doc == "terms" %}aria-current="page"{% endif %}>Prototype information</a>
+  </nav>
+  <p class="civic-eyebrow">About HiveMind</p>
+  <h1>{{ page.title }}</h1>
+  <p class="legal-intro">{{ page.intro }}</p>
+  {% for section in page.sections %}
+    <section class="legal-section" aria-labelledby="{{ section.id }}">
+      <h2 id="{{ section.id }}">{{ section.heading }}</h2>
+      {% for paragraph in section.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+    </section>
+  {% endfor %}
+  <a class="civic-text-button legal-back" href="/">&larr; Back to HiveMind</a>
+</main>
+{% endblock %}

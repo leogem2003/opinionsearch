@@ -1,6 +1,6 @@
 """Tests for the discovered topic hierarchy (opinions/clustering.py).
 
-The hierarchy under test is the one built once per session by conftest.py,
+The hierarchy under test is built for this module by conftest.py,
 over opinions/tests/fixtures/sample_opinions.json -- these tests read it
 rather than re-clustering, since a run costs real EVōC time.
 
@@ -19,7 +19,9 @@ import pytest
 from opinions.clustering import assign_to_nearest_clusters, layer_count
 from opinions.models import Cluster, Opinion
 
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_opinions.json"
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("opinion_samples")]
+
+FIXTURE_PATH = Path(__file__).parents[1] / "fixtures" / "sample_opinions.json"
 STATEMENTS = json.loads(FIXTURE_PATH.read_text())["statements"]
 
 

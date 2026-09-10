@@ -3,6 +3,7 @@ import hashlib
 
 import numpy as np
 from django.shortcuts import render
+from django.views.decorators.http import require_GET
 
 from .clustering import layer_count
 from .projection import (
@@ -24,6 +25,7 @@ UNCLUSTERED_LABEL = "unclustered"
 AXIS_PADDING_FACTOR = 1.1
 
 
+@require_GET
 def search(request):
     """Render the search page: results list, a sentiment histogram, and a
     2D plot of the results' embeddings.

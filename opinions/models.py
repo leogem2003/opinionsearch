@@ -12,6 +12,8 @@ import uuid
 # django.contrib.gis.db.models re-exports the standard field types alongside the
 # geo ones, so this single import covers both.
 from django.contrib.gis.db import models
+from django.contrib.postgres.fields import ArrayField
+from django.contrib.postgres.indexes import GinIndex
 from pgvector.django import HnswIndex, VectorField
 
 from .embedding import embed_text
@@ -19,6 +21,24 @@ from .sentiment import score_text
 
 # Dense embedding width of BGE-M3, the model named in design.md.
 EMBEDDING_DIM = 1024
+
+
+class Contribution(models.Model):
+    """Original input and its declared visibility; receipts are always private."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Preserve the visibility promised to submissions made before public intake.
+    publication = models.CharField(
+        max_length=7,
+        choices=[("private", "Private"), ("public", "Public")],
+        default="private",
+    )
+    submission_key_hash = models.CharField(max_length=64, unique=True, editable=False)
+    # Persist the private receipt so a lost response can be recovered on retry.
+    # Neither this field nor the submission key is exposed by the read endpoint.
+    access_token = models.CharField(max_length=64, editable=False)
 
 
 class User(models.Model):
@@ -107,6 +127,21 @@ class Opinion(models.Model):
     """
 
     text = models.TextField()
+    # Fixed civic categories are independent of discovered EVōC clusters.
+    topic_ids = ArrayField(
+        models.SlugField(max_length=40), default=list, blank=True, editable=False
+    )
+    topic_analysis = models.JSONField(default=dict, blank=True, editable=False)
+    # One searchable representation per source in this prototype. The stable
+    # source link preserves provenance and makes indexing retries idempotent.
+    contribution = models.OneToOneField(
+        Contribution,
+        null=True,
+        blank=True,
+        editable=False,
+        on_delete=models.PROTECT,
+        related_name="opinion",
+    )
     timestamp = models.DateTimeField(auto_now_add=True)
     geo_coordinates = models.PointField(geography=True, null=True, blank=True)
     author = models.ForeignKey(
@@ -115,6 +150,8 @@ class Opinion(models.Model):
         db_column="user_uuid",
         on_delete=models.CASCADE,
         related_name="opinions",
+        null=True,
+        blank=True,
     )
     # Null until the embedding has been computed and stored.
     embedding = VectorField(dimensions=EMBEDDING_DIM, null=True, blank=True)
@@ -133,6 +170,7 @@ class Opinion(models.Model):
 
     class Meta:
         indexes = [
+            GinIndex(fields=["topic_ids"], name="opinion_topic_ids_gin"),
             # Cosine distance, matching how BGE-M3 embeddings are normally compared.
             HnswIndex(
                 name="opinion_embedding_hnsw",
@@ -140,7 +178,7 @@ class Opinion(models.Model):
                 m=16,
                 ef_construction=64,
                 opclasses=["vector_cosine_ops"],
-            )
+            ),
         ]
 
     def save(self, *args, **kwargs):
@@ -151,6 +189,7 @@ class Opinion(models.Model):
         Opinion row before it's written to the database. Editing an already
         embedded/scored opinion's text does not currently redo either.
 
+        Predefined civic categories are assigned here for new opinions.
         A full re-clustering (opinions/clustering.py's ``cluster_opinions``,
         run via ``manage.py recluster``) is a whole-corpus operation and far
         too slow to run per save, so it does *not* happen here. Instead, once
@@ -165,6 +204,16 @@ class Opinion(models.Model):
             self.embedding = embed_text(self.text)
         if self.sentiment is None and self.text:
             self.sentiment = score_text(self.text)
+        if (
+            self._state.adding
+            and not self.topic_analysis
+            and self.embedding is not None
+        ):
+            from .topic_classification import classify_topics
+
+            self.topic_ids, self.topic_analysis = classify_topics(
+                self.text, self.embedding
+            )
         super().save(*args, **kwargs)
         if is_new:
             # Local import: opinions.clustering imports this module (for

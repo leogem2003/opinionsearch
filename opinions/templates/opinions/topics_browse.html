@@ -1,0 +1,67 @@
+{% extends "opinions/base.html" %}
+{% block title %}Explore opinions — HiveMind{% endblock %}
+{% block page_variant %}exploration-shell{% endblock %}
+{% block content %}
+<main class="exploration-container exploration-main topic-index" id="main-content">
+  <nav class="page-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">&rsaquo;</span><span aria-current="page">Topics</span></nav>
+  <header class="topic-heading"><h1>Explore opinions</h1></header>
+
+  {% if topic_unavailable %}
+    <div class="understanding-empty">
+      <h1>Topic unavailable</h1>
+      <a class="civic-text-button" href="/topics/">Browse topics &rarr;</a>
+    </div>
+  {% else %}
+    <div class="opinion-search">
+      <form role="search" aria-label="Search opinions" method="get" action="/topics/">
+        <label for="query">Search opinions</label>
+        <div class="opinion-search-controls">
+          <input id="query" type="search" name="q" value="{{ query }}" placeholder="A topic or statement, such as affordable housing">
+          <button class="civic-button" type="submit">Search</button>
+        </div>
+      </form>
+      {% if query_error %}<p class="civic-error" role="alert">{{ query_error }}</p>{% endif %}
+
+      {% if query_error %}
+      {% elif results is not None %}
+        {% if results %}
+          {% include "opinions/_sentiment_breakdown.html" %}
+        {% else %}
+          <div class="search-no-results" role="status">
+            <h2>No matching opinions yet</h2>
+            <p>Try another topic or a more specific phrase.</p>
+          </div>
+        {% endif %}
+      {% else %}
+        <section class="public-topic-directory" aria-label="Browse opinion topics">
+          <header class="public-directory-heading">
+            <h2>Browse by topic</h2>
+            <form method="get" action="/topics/">
+              <label class="civic-sr-only" for="sort">Sort topics</label>
+              <select id="sort" name="sort" data-submit-on-change>
+                {% for value, label in sorts %}
+                  <option value="{{ value }}" {% if value == sort %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </header>
+          <ul class="directory-discussions public-topic-list">
+            {% for topic in directory %}
+              <li>
+                <a href="/topics/{{ topic.id }}/">
+                  <div>
+                    <h3>{{ topic.title }}</h3>
+                    <p>{{ topic.opinionCount }} opinion{{ topic.opinionCount|pluralize }}{% if topic.lastContributionAt %} <span aria-hidden="true">&middot;</span> Last contribution {{ topic.lastContributionAt|date:"j M Y" }}{% endif %}</p>
+                  </div>
+                  <span aria-hidden="true">&rarr;</span>
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
+          <p class="public-topic-note">An opinion can appear under more than one topic.</p>
+        </section>
+      {% endif %}
+    </div>
+  {% endif %}
+</main>
+{% endblock %}
