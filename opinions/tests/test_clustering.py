@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from opinions.clustering import layer_count
+from opinions.clustering import assign_to_nearest_clusters, layer_count
 from opinions.models import Cluster, Opinion
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_opinions.json"
@@ -134,3 +134,49 @@ def test_finest_clusters_broadly_line_up_with_the_fixture_themes():
         f"only {in_majority_theme}/{clustered} clustered opinions share their "
         "cluster's majority theme"
     )
+
+
+@pytest.mark.django_db
+def test_publishing_an_opinion_assigns_it_without_a_recluster():
+    """Opinion.save() calls assign_to_nearest_clusters (see models.py), so a
+    freshly published opinion gets a topic immediately rather than waiting
+    for the next `manage.py recluster`.
+
+    Republishing an already-clustered statement verbatim, rather than some
+    new text, sidesteps guessing at the assignment threshold: BGE-M3 is
+    deterministic, so the new row's embedding -- and its distance to that
+    statement's own cluster centroid -- is (numerically) identical to the
+    original's, which is certain to be well inside it.
+    """
+    source_text = STATEMENTS[3]["text"]
+    source = Opinion.objects.filter(text=source_text, clusters__isnull=False).first()
+    assert source is not None, "fixture sanity: expected this statement to be clustered"
+    layer = source.clusters.first().layer
+    cluster = source.cluster_at(layer)
+
+    clusters_before = Cluster.objects.count()
+    size_before = cluster.size
+
+    republished = Opinion.objects.create(text=source_text, author=source.author)
+
+    # No re-clustering happened -- same clusters, just one more member.
+    assert Cluster.objects.count() == clusters_before
+    assert republished.cluster_at(layer) == cluster
+    cluster.refresh_from_db()
+    assert cluster.size == size_before + 1
+
+
+@pytest.mark.django_db
+def test_assign_to_nearest_clusters_is_a_noop_without_a_hierarchy():
+    Cluster.objects.all().delete()
+    opinion = Opinion.objects.filter(embedding__isnull=False).first()
+
+    assert assign_to_nearest_clusters(opinion) == []
+
+
+def test_assign_to_nearest_clusters_is_a_noop_without_an_embedding():
+    # No @pytest.mark.django_db: an unsaved instance is never written, and
+    # assign_to_nearest_clusters must return before it would need to be.
+    unsaved = Opinion(text="not yet embedded")
+
+    assert assign_to_nearest_clusters(unsaved) == []

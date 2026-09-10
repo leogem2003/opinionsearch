@@ -30,6 +30,21 @@ publishing a batch of opinions, rediscover them with:
 uv run python manage.py recluster
 ```
 
+## Loading real data
+
+For a real, topically varied corpus rather than the small hand-written test
+fixture, load a sample of real tweets from sitting US Senators
+([m-newhauser/senator-tweets](https://huggingface.co/datasets/m-newhauser/senator-tweets)
+on the Hugging Face Hub) and cluster them in one step:
+```bash
+uv run python manage.py load_senator_tweets
+```
+This replaces whatever Opinions already exist with a fresh, reproducible
+500-tweet sample (`--limit` to change the size — expect roughly 1.5
+tweets/second to embed on a CPU-only machine, so 500 is ~6 minutes) and
+clusters it automatically. Run `--help` for the rest of the options
+(`--seed`, `--keep-existing`, `--skip-cluster`, ...).
+
 ## Docker
 > [!WARNING]  
 > The default managemant user will be `admin`, passwd:`admin` and runs the **development server**

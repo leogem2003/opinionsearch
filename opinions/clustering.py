@@ -24,11 +24,19 @@ flat partition:
 
 EVōC outputs ids only, never words. Labelling happens afterwards, in
 ``opinions/topic_labels.py``.
+
+A full re-fit is too slow to run on every publish, so a newly created opinion
+doesn't wait for it: ``assign_to_nearest_clusters`` (called from
+``Opinion.save()``) does a cheap nearest-centroid lookup against the
+*existing* hierarchy instead, an approximation that a later ``recluster``
+supersedes rather than depends on.
 """
 
 import evoc
 import numpy as np
 from django.db import models, transaction
+from django.db.models import F
+from pgvector.django import CosineDistance
 
 from .models import Cluster, Opinion
 from .topic_labels import label_clusters, medoid_index
@@ -51,6 +59,18 @@ RANDOM_STATE = 42
 # build a graph at all, and returns a single all-noise layer well before it
 # errors outright.
 MIN_OPINIONS_TO_CLUSTER = 20
+
+# Maximum cosine distance to a cluster's centroid for assign_to_nearest_clusters
+# to place a new opinion there rather than leaving it unclustered -- see that
+# function. Measured against the 500-tweet real corpus (manage.py
+# load_senator_tweets): a genuine member sits, on average, 0.23 (layer 0) to
+# 0.32 (the broadest layer) from its own centroid, 90% of them within 0.31-0.39
+# depending on layer. 0.3 sits below most of that range on purpose -- it's
+# deliberately conservative, favouring leaving an opinion unclustered over
+# force-fitting it: at 0.35, over 60% of the opinions EVōC itself had called
+# noise at the finest layer would get pulled into a cluster anyway, which
+# would make "noise" mean much less. Revisit if that trade-off is wrong.
+DEFAULT_ASSIGNMENT_MAX_DISTANCE = 0.3
 
 
 class NotEnoughOpinions(RuntimeError):
@@ -101,6 +121,42 @@ def cluster_opinions(
         _link_parents(clusters, clusterer.cluster_tree_, n_layers=len(layers))
         _assign_memberships(layers, clusters, opinions)
     return list(clusters.values())
+
+
+def assign_to_nearest_clusters(opinion, max_distance=DEFAULT_ASSIGNMENT_MAX_DISTANCE):
+    """Attach ``opinion`` to its nearest existing cluster in every layer.
+
+    A full ``cluster_opinions()`` re-fits EVōC over the whole corpus and is
+    too slow to run on every single publish. This is the cheap alternative
+    called from ``Opinion.save()`` instead (see there): for each layer of the
+    *already-discovered* hierarchy, find the cluster whose centroid is
+    closest by cosine distance and join it, provided that distance is within
+    ``max_distance`` -- otherwise the opinion is left unclustered in that
+    layer, the same outcome EVōC's own noise label would give it. Nothing
+    here moves a centroid or relabels a cluster, so this is only ever an
+    approximation of what the next real ``cluster_opinions()`` run would find;
+    it exists so a newly published opinion shows a topic immediately instead
+    of waiting for that run.
+
+    Does nothing (and returns an empty list) if there is no hierarchy yet, or
+    the opinion has no embedding.
+    """
+    if opinion.embedding is None:
+        return []
+
+    assigned = []
+    for layer in Cluster.objects.order_by().values_list("layer", flat=True).distinct():
+        nearest = (
+            Cluster.objects.filter(layer=layer)
+            .annotate(distance=CosineDistance("centroid", opinion.embedding))
+            .order_by("distance")
+            .first()
+        )
+        if nearest is not None and nearest.distance <= max_distance:
+            opinion.clusters.add(nearest)
+            Cluster.objects.filter(pk=nearest.pk).update(size=F("size") + 1)
+            assigned.append(nearest)
+    return assigned
 
 
 def layer_count():
