@@ -15,11 +15,9 @@ The fixture format is:
 Each statement is stored as an ``Opinion`` authored by the named user, as if
 that user had published it themselves.
 
-``topic``/``subtopic`` are **not** stored: topics aren't declared any more,
-they're discovered by clustering the embeddings (``opinions/clustering.py``).
-They stay in the fixture as hand-written ground truth, so a test can check
-that the discovered clusters bear some resemblance to the themes the corpus
-was actually written around -- see ``opinions/tests/test_clustering.py``.
+``topic``/``subtopic`` are evaluation labels, not stored memberships or civic
+topic assignments. The integration tests compare them with discovered clusters;
+see ``opinions/tests/integration/test_clustering.py``.
 """
 
 import json

@@ -1,0 +1,109 @@
+{% extends "opinions/base.html" %}
+{% load static %}
+{% block title %}HiveMind — Public dialogue{% endblock %}
+{% block content %}
+<main class="civic-container civic-main" id="main-content">
+  <div class="civic-intro">
+    <div class="civic-intro-copy">
+      <h1>What matters to<br class="civic-heading-break"> your community?</h1>
+      <p>Share an issue. Explore public topics.</p>
+    </div>
+    <svg class="civic-motif" viewBox="0 0 330 230" fill="none" aria-hidden="true">
+      <g stroke="currentColor" stroke-width="1">
+        <path d="m165 24 64 37v74l-64 37-64-37V61l64-37Z" />
+        <path d="m101 61-64 37v74l64 37 64-37M229 61l64 37v74l-64 37-64-37" />
+        <path d="m165 98 64 37M165 98l-64 37M165 24v74M37 98l64 37M293 98l-64 37M165 98v74" />
+        <circle cx="165" cy="98" r="22" fill="var(--civic-canvas)" />
+        <circle cx="101" cy="61" r="5" fill="var(--civic-canvas)" />
+        <circle cx="229" cy="135" r="5" fill="var(--civic-canvas)" />
+        <circle cx="101" cy="209" r="4" fill="var(--civic-canvas)" />
+      </g>
+      <circle cx="165" cy="98" r="5" fill="#17394b" />
+      <circle cx="165" cy="24" r="5" fill="#9d7b4b" />
+      <circle cx="37" cy="172" r="4" fill="#9d7b4b" />
+      <circle cx="293" cy="98" r="4" fill="#17394b" />
+    </svg>
+  </div>
+
+  <div class="civic-workspace">
+    <section class="civic-section civic-contribute" id="share-issue" aria-labelledby="issue-heading">
+      <header class="civic-section-header">
+        <div>
+          <p class="civic-eyebrow civic-section-label">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4h16v12H10l-5 4v-4H4V4Z" /><path d="M8 8h8M8 12h5" /></svg>
+            Contribute
+          </p>
+          <h2 id="issue-heading">Describe an issue</h2>
+        </div>
+      </header>
+      <div class="civic-composer">
+        <form method="post" action="/">
+          {% csrf_token %}
+          <input type="hidden" name="submission_key" value="{{ submission_key }}">
+          <textarea
+            id="issue-message"
+            name="text"
+            placeholder="What’s happening, and what would you like to change?"
+            rows="2"
+            aria-labelledby="issue-heading"
+            required
+            data-autogrow
+            data-submit-on-mod-enter
+            aria-describedby="issue-hint{% if error %} issue-error{% endif %}"
+          >{{ text }}</textarea>
+          <div class="civic-composer-actions">
+            <span class="civic-composer-hint" id="issue-hint">Your text will be publicly searchable</span>
+            <button class="civic-button" type="submit">
+              Send issue
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+            </button>
+          </div>
+        </form>
+      </div>
+      {% if error %}<p class="civic-error" id="issue-error" role="alert">{{ error }}</p>{% endif %}
+    </section>
+
+    <section class="civic-section civic-topics" id="current-topics" aria-labelledby="topics-heading">
+      <header class="civic-section-header">
+        <div>
+          <p class="civic-eyebrow civic-section-label">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6" cy="7" r="3" /><circle cx="18" cy="7" r="3" /><circle cx="12" cy="18" r="3" /><path d="M9 7h6M7.5 10l3 5M16.5 10l-3 5" /></svg>
+            Explore
+          </p>
+          <h2 id="topics-heading">Explore opinions</h2>
+        </div>
+      </header>
+      <form role="search" aria-label="Search opinions" method="get" action="/topics/">
+        <label for="teaser-query" class="civic-sr-only">Search opinions</label>
+        <div class="opinion-search-controls">
+          <input id="teaser-query" type="search" name="q" placeholder="A topic or statement, such as affordable housing">
+          <button class="civic-button" type="submit">Search</button>
+        </div>
+      </form>
+      <div class="civic-topic-content">
+        {% if topics %}
+          <ul class="civic-topic-list">
+            {% for topic in topics %}
+              <li>
+                <a href="/topics/{{ topic.id }}/">
+                  <div>
+                    <h3>{{ topic.title }}</h3>
+                    <span>{{ topic.opinionCount }} opinion{{ topic.opinionCount|pluralize }}</span>
+                  </div>
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="civic-topic-empty">
+            <h3>No opinions yet</h3>
+            <p>Be the first to describe an issue above.</p>
+          </div>
+        {% endif %}
+      </div>
+      <a class="civic-text-button" href="/topics/">Explore opinions <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg></a>
+    </section>
+  </div>
+</main>
+{% endblock %}

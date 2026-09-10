@@ -9,3 +9,9 @@ __pycache__
 .pytest_cache
 .ruff_cache
 db.sqlite3
+**/.DS_Store
+**/node_modules
+**/dist
+**/.vite
+**/.env.*
+!**/.env.example

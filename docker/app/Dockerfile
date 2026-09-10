@@ -50,5 +50,10 @@ ENV PYTHONUNBUFFERED=1
 COPY docker/app/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Docker exec/healthchecks cannot resolve the base image's account-file symlinks.
+# Keep plain copies, as docker/db already does for its postgres user.
+RUN cp -L /etc/passwd /tmp/passwd && rm /etc/passwd && mv /tmp/passwd /etc/passwd \
+ && cp -L /etc/group /tmp/group && rm /etc/group && mv /tmp/group /etc/group
+
 EXPOSE 8000
 ENTRYPOINT ["/entrypoint.sh"]

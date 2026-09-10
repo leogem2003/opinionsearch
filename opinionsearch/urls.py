@@ -18,7 +18,21 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from opinions.contributions import contribution_detail, submit_issue
+from opinions.legal import privacy_policy, terms
+from opinions.topics import topic_detail, topics_browse
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("search/", include("opinions.urls")),
+    path("", submit_issue, name="home"),
+    path("topics/", topics_browse, name="topics"),
+    path("topics/<str:topic_id>/", topic_detail, name="topic-detail"),
+    path(
+        "contributions/<str:contribution_id>/",
+        contribution_detail,
+        name="contribution-detail",
+    ),
+    path("privacy-policy/", privacy_policy, name="privacy-policy"),
+    path("terms-and-conditions/", terms, name="terms"),
 ]

@@ -34,7 +34,13 @@ class OpinionAdmin(admin.ModelAdmin):
     # below) is what makes Django drop it from the editable form -- a readonly
     # *method* alone wouldn't stop the plain field from also appearing as an
     # editable input.
-    readonly_fields = ("embedding", "sentiment", "clusters")
+    readonly_fields = (
+        "embedding",
+        "sentiment",
+        "clusters",
+        "topic_ids",
+        "topic_analysis",
+    )
     inlines = [ArgumentInline]
 
     @admin.display(description="sentiment", ordering="sentiment")

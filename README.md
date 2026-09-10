@@ -1,34 +1,38 @@
 # Opinionsearch
 
-## Features
-TODO: screeshots
+## Run the website
 
-1. Discover and visualize other opinions
-2. Filter by categories, location and time
-3. Topics are discovered automatically by clustering the opinion embeddings
-   (EVōC), at several levels of granularity — nobody tags an opinion by hand
-   
-# Setup
-> [!NOTE]  
-> This is only meant for **development** and not suitable for production.
+Install and start Docker with Compose support (Docker Desktop includes both).
+From the repository root, run:
 
-## Dependincies
-- `python3` with Astral `uv`
-- `gdal`, `geos` and `proj` system libraries
-- `postgresql` with `postgis` and `pgvector` extensions
-See [flake.nix](flake.nix) for initial postgresql setup.
-  
-# Running
-(Dev server)
 ```bash
-uv run python manage.py runserver 
+docker compose up --build
 ```
 
-Topics are discovered from the corpus rather than typed in, so after loading or
-publishing a batch of opinions, rediscover them with:
-```bash
-uv run python manage.py recluster
-```
+Once the healthcheck passes, open **[http://localhost:8000](http://localhost:8000)**.
+This starts the database, applies migrations and starts Django, which serves the
+whole website (issue form, topic search/browse, saved-contribution pages) directly
+as server-rendered HTML — no separate frontend process, Node or `.env` setup is
+needed. The first build downloads sizeable dependencies, and the first search or
+submission also downloads model weights.
+
+Press **Ctrl+C** to stop. Run the same command to start again. Database contents
+and model downloads persist in Docker volumes; `docker compose down` also keeps
+them. If port 8000 is occupied, stop the previous server first.
+
+This is a **local development/showcase setup**, bound to localhost. Django admin
+is at [http://localhost:8000/admin/](http://localhost:8000/admin/) with the existing
+development login `admin` / `admin`.
+
+## What it includes
+
+- Submit an issue and search the original opinions with BGE-M3 embeddings.
+- Browse predefined civic topics and positive/negative/neutral sentiment.
+- Discover hierarchical clusters with EVōC and inspect them on the Django
+  [search page](http://localhost:8000/search/).
+
+After loading a corpus, run `docker compose run --rm web uv run python manage.py recluster`
+to refresh discovered clusters.
 
 ## Loading real data
 
@@ -45,23 +49,50 @@ tweets/second to embed on a CPU-only machine, so 500 is ~6 minutes) and
 clusters it automatically. Run `--help` for the rest of the options
 (`--seed`, `--keep-existing`, `--skip-cluster`, ...).
 
-## Docker
-> [!WARNING]  
-> The default managemant user will be `admin`, passwd:`admin` and runs the **development server**
+## Develop without Docker
 
+The backend needs Python with `uv`, GDAL/GEOS/PROJ, and PostgreSQL with PostGIS
+and pgvector. See [flake.nix](flake.nix) for the native environment and database
+setup. Apply migrations with `uv run python manage.py migrate`, then start Django
+with `uv run python manage.py runserver` and open
+[http://localhost:8000](http://localhost:8000) — the frontend is served by the
+same process, so there is nothing else to start.
 
-Start the Django webapp
-```bash
-docker compose up --build
+## Tests
+
+Everyday checks use fixed model outputs; they still exercise the PostgreSQL
+database and API. Real-model checks live in one opt-in integration folder.
+
+```text
+opinions/tests/
+├── test_frontend.py     # submission, receipts, retries and search contracts
+├── test_topics.py       # topic decisions, browsing and backfill
+├── test_admin.py        # admin field protections
+├── integration/
+│   ├── test_search.py   # retrieval and submission with real models
+│   ├── test_clustering.py
+│   └── conftest.py      # expensive sample-corpus setup, only for this group
+├── fixtures/           # shared sample opinions
+└── utils.py            # fixture loader, also used by the notebook
 ```
 
-The app listens at `http://localhost:8000`. The first build could take a while.
-`docker compose down -v` clears caches and the database.
+From the repository root:
 
-Run the tests:
 ```bash
-docker compose run --rm web uv run pytest
+docker compose run --rm --entrypoint uv web run pytest                 # everyday checks
+docker compose run --rm --entrypoint uv web run pytest -m integration  # real models
 ```
+
+The entrypoint override runs pytest directly without the web startup's migrations
+or admin creation. Docker starts the database dependency; tests use
+`test_opinionsearch`, separate from the application database. Rebuild the web
+image after changing tests (`docker compose build web`).
+
+In the local development environment, use `uv run pytest` or
+`uv run pytest -m integration`. To run everything, use `uv run pytest -m ''`.
+The default marker selection follows [pytest's standard configuration](https://docs.pytest.org/en/stable/example/simple.html#how-to-change-command-line-options-defaults).
+Real-model checks may download model weights on their first run; they are not
+needed for ordinary frontend changes.
 
 ## Notebooks
 [`notebooks/umap_projection.ipynb`](notebooks/umap_projection.ipynb) prototypes the 2D UMAP
@@ -87,10 +118,9 @@ See [LICENSE.txt](LICENSE.txt)
 #### Inspirations: 
 - [github.com/Carbon-copy-PS/murmi](https://github.com/Carbon-copy-PS/murmi)
 - Lectures by *Herr Prof. Dr Helbing Dirk* and many others from the course *Hacking Democracy: Co-Creating Innovative Tools for Participatory Politics HS2026* at ETHZ Zurich
-- [pol.is](https://pol.is/) as inspiration 
+- [pol.is](https://pol.is/) as inspiration
 
 ### Developers
 - [@leogem2003](https://github.com/leogem2003), architecture design design, prompt engineering, programming
 - [@ttlns](https://github.com/leogem2003), code review, testing, bugfix
 - [@galtendorfer][https://github.com/galtendorfer] Initial frontent draft, presentation
-- Claude Code: Most of the actual writing and programming
