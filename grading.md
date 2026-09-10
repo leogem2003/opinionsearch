@@ -22,6 +22,12 @@ Q: User agreement/TOS
 - [ ] Maybe (?) add negations for stop words like "hate"? TODO:
 - [ ] Filter my location, user, time
 
+- [ ] add user name?
+- [ ] dynamic topics explore
+- [ ] update legal part in the end
+- [ ] What is "contribution" table used for?
+- [ ] remove private imputs
+- [ ] add uv run way to readme
 
 - [ ] Move docker file to alpine linux, current setup looks like a mess (claude code -_-)
 - [ ] political (instead of) map for location selection
