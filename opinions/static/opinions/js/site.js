@@ -78,4 +78,25 @@
       button.addEventListener('click', function () { apply(null); });
     });
   });
+
+  // Show only the first batch of a long list, with a button to reveal more.
+  // Every item stays in the DOM and visible by default, so this only adds a
+  // limit -- with JS disabled the visitor just sees the full list.
+  document.querySelectorAll('[data-reveal-more]').forEach(function (root) {
+    var batch = parseInt(root.getAttribute('data-reveal-batch'), 10) || 10;
+    var items = root.querySelectorAll('[data-reveal-item]');
+    var trigger = root.querySelector('[data-reveal-trigger]');
+    if (!trigger || items.length <= batch) return;
+    var shown = batch;
+    items.forEach(function (item, index) {
+      if (index >= shown) item.classList.add('search-hidden');
+    });
+    trigger.hidden = false;
+    trigger.addEventListener('click', function () {
+      var next = Math.min(shown + batch, items.length);
+      for (var i = shown; i < next; i++) items[i].classList.remove('search-hidden');
+      shown = next;
+      if (shown >= items.length) trigger.hidden = true;
+    });
+  });
 })();

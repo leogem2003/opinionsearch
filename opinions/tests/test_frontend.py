@@ -404,12 +404,16 @@ def test_anonymous_input_keeps_categories_and_source_when_clusters_are_added(
 
     html = client.get("/search/", {"query": opinion.text})
     assert html.status_code == 200
-    row = html.context["results"][0]
-    assert row["author"] is None
-    assert row["topic"] == ("rent, tenants" if clustered else "unclustered")
-    assert row["topics"] == (
-        [{"layer": 0, "label": "rent, tenants"}] if clustered else []
-    )
+    if clustered:
+        row = html.context["results"][0]
+        assert row["author"] is None
+        assert row["text"] == opinion.text
+        assert html.context["clusters_found"][0]["label"] == "rent, tenants"
+    else:
+        # No discovered hierarchy yet -- nothing to match a cluster against.
+        assert html.context["results"] == []
+        assert html.context["no_matches"] is True
+
     result = client.get("/topics/", {"topic": "housing"}).context["results"][0]
     assert result["topics"] == [{"id": "housing", "title": "Housing"}]
     assert result["contribution_id"] == source.id
@@ -419,4 +423,144 @@ def test_anonymous_input_keeps_categories_and_source_when_clusters_are_added(
         client.get(f"/contributions/{source.id}/", {"receipt": token}).status_code
         == 200
     )
+    cache.clear()
+
+
+VECTOR2 = [0.0, 1.0] + [0.0] * 1022
+
+
+@pytest.mark.django_db
+def test_closest_clusters_orders_by_centroid_distance():
+    from opinions.views import _closest_clusters
+
+    near = Cluster.objects.create(
+        layer=0, evoc_id=0, label="near", centroid=VECTOR, size=1
+    )
+    Cluster.objects.create(layer=0, evoc_id=1, label="far", centroid=VECTOR2, size=1)
+
+    assert _closest_clusters(VECTOR, layer=0, n=1) == [near]
+    assert [c.label for c in _closest_clusters(VECTOR, layer=0, n=2)] == [
+        "near",
+        "far",
+    ]
+
+
+@pytest.mark.django_db
+def test_search_finds_opinions_via_the_closest_cluster(client, monkeypatch):
+    cache.clear()
+    monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
+    monkeypatch.setattr("opinions.search.score_text", Mock(return_value=4))
+    opinion = Opinion.objects.create(
+        text="Housing needs more supply.", embedding=VECTOR, sentiment=4
+    )
+    cluster = Cluster.objects.create(
+        layer=0, evoc_id=0, label="housing", centroid=VECTOR, size=1, exemplar=opinion
+    )
+    opinion.clusters.add(cluster)
+
+    response = client.get("/search/", {"query": "affordable housing", "n": 1})
+    assert response.status_code == 200
+    assert response.context["clusters_found"] == [{"label": "housing", "size": 1}]
+    assert [row["id"] for row in response.context["results"]] == [opinion.pk]
+    assert response.context["no_matches"] is False
+    assert response.context["weak_match"] is False
+    cache.clear()
+
+
+@pytest.mark.django_db
+def test_search_level_tabs_switch_which_layer_is_matched(client, monkeypatch):
+    cache.clear()
+    monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
+    monkeypatch.setattr("opinions.search.score_text", Mock(return_value=3))
+    fine_opinion = Opinion.objects.create(
+        text="A narrow topic opinion.", embedding=VECTOR, sentiment=3
+    )
+    broad_opinion = Opinion.objects.create(
+        text="A broad topic opinion.", embedding=VECTOR, sentiment=3
+    )
+    broad_cluster = Cluster.objects.create(
+        layer=1, evoc_id=0, label="broad", centroid=VECTOR, size=1
+    )
+    fine_cluster = Cluster.objects.create(
+        layer=0, evoc_id=0, label="fine", centroid=VECTOR, size=1, parent=broad_cluster
+    )
+    fine_opinion.clusters.add(fine_cluster)
+    broad_opinion.clusters.add(broad_cluster)
+
+    at_layer0 = client.get("/search/", {"query": "topic", "n": 1, "topic_level": 0})
+    assert [row["id"] for row in at_layer0.context["results"]] == [fine_opinion.pk]
+    assert at_layer0.context["max_topic_level"] == 1
+
+    at_layer1 = client.get("/search/", {"query": "topic", "n": 1, "topic_level": 1})
+    assert [row["id"] for row in at_layer1.context["results"]] == [broad_opinion.pk]
+    cache.clear()
+
+
+@pytest.mark.django_db
+def test_search_flags_a_weak_match_when_the_closest_cluster_is_far(client, monkeypatch):
+    cache.clear()
+    monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
+    monkeypatch.setattr("opinions.search.score_text", Mock(return_value=3))
+    opinion = Opinion.objects.create(
+        text="Unrelated opinion.", embedding=VECTOR2, sentiment=3
+    )
+    cluster = Cluster.objects.create(
+        layer=0, evoc_id=0, label="far", centroid=VECTOR2, size=1
+    )
+    opinion.clusters.add(cluster)
+
+    response = client.get("/search/", {"query": "something else entirely", "n": 1})
+    assert response.status_code == 200
+    assert response.context["no_matches"] is False
+    assert response.context["weak_match"] is True
+    cache.clear()
+
+
+@pytest.mark.django_db
+def test_browse_root_lists_only_parentless_clusters(client):
+    top = Cluster.objects.create(
+        layer=1, evoc_id=0, label="top", centroid=VECTOR, size=2
+    )
+    Cluster.objects.create(
+        layer=0, evoc_id=0, label="child", centroid=VECTOR, size=1, parent=top
+    )
+    # Never merged upward -- parent=None even though it isn't the top layer.
+    orphan = Cluster.objects.create(
+        layer=0, evoc_id=1, label="orphan", centroid=VECTOR2, size=1
+    )
+
+    response = client.get("/search/browse/")
+    assert response.status_code == 200
+    ids = {cluster.pk for cluster in response.context["options"]}
+    assert ids == {top.pk, orphan.pk}
+
+
+@pytest.mark.django_db
+def test_browse_shows_children_then_the_shared_results_at_a_leaf(client):
+    opinion = Opinion.objects.create(
+        text="A leaf opinion.", embedding=VECTOR, sentiment=3
+    )
+    top = Cluster.objects.create(
+        layer=1, evoc_id=0, label="top", centroid=VECTOR, size=1
+    )
+    leaf = Cluster.objects.create(
+        layer=0, evoc_id=0, label="leaf", centroid=VECTOR, size=1, parent=top
+    )
+    opinion.clusters.add(leaf)
+
+    at_top = client.get("/search/browse/", {"cluster": top.pk})
+    assert at_top.status_code == 200
+    assert list(at_top.context["options"]) == [leaf]
+    assert at_top.context["breadcrumbs"] == []
+
+    at_leaf = client.get("/search/browse/", {"cluster": leaf.pk})
+    assert at_leaf.status_code == 200
+    assert at_leaf.context["options"] is None
+    assert [row["id"] for row in at_leaf.context["results"]] == [opinion.pk]
+    assert [ancestor.pk for ancestor in at_leaf.context["breadcrumbs"]] == [top.pk]
+
+
+@pytest.mark.django_db
+def test_browse_unknown_cluster_404s(client):
+    assert client.get("/search/browse/", {"cluster": 999999}).status_code == 404
     cache.clear()

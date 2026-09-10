@@ -2,193 +2,342 @@ import colorsys
 import hashlib
 
 import numpy as np
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 from django.views.decorators.http import require_GET
+from pgvector.django import CosineDistance
 
-from .clustering import layer_count
+from .clustering import DEFAULT_ASSIGNMENT_MAX_DISTANCE, layer_count
+from .models import Cluster
 from .projection import (
+    DEFAULT_MIN_DIST,
+    DEFAULT_N_NEIGHBORS,
     MIN_POINTS_TO_PROJECT,
     parse_min_dist,
     parse_n_neighbors,
     project_2d,
 )
-from .search import parse_max_distance, search_opinions_cached
+from .search import embed_query_cached
 from .sentiment import SENTIMENT_LABELS, sentiment_label
 
-# Shown for an opinion the clustering left as noise at the chosen layer, or
-# one published since the last clustering run. Not a topic, but it has to be
-# drawn as one so those opinions still appear on the plot.
-UNCLUSTERED_LABEL = "unclustered"
-
-# A little headroom around the query on the scatter chart's axes, so the
-# single farthest point doesn't sit exactly on the edge -- see _build_plot_data.
+# A little headroom around the plot's centre point, so the single farthest
+# point doesn't sit exactly on the edge -- see _build_cluster_plot_data.
 AXIS_PADDING_FACTOR = 1.1
+
+# How many opinions a single search/browse result shows at most -- same
+# convention as opinions/topics.py's SEARCH_LIMIT.
+SEARCH_LIMIT = 50
+
+DEFAULT_N = 5
+MIN_N = 1
+MAX_N = 20
 
 
 @require_GET
 def search(request):
-    """Render the search page: results list, a sentiment histogram, and a
-    2D plot of the results' embeddings.
+    """Render the cluster-search page: the N discovered topics closest to a
+    typed query, their opinions' sentiment breakdown, and a 2D projection.
 
-    The query lives in ``opinions.search`` (cached on ``(query,
-    max_distance)`` so that retuning the UMAP sliders below doesn't re-embed
-    or re-score the query, or rescan the vector index -- see
-    ``search.search_opinions_cached``), and the projection lives in
-    ``opinions.projection``. Both charts are drawn client-side by Chart.js
-    (see search.html) from JSON this view embeds via the ``json_script``
-    template filter -- this view's job is fetching that data and, for the
-    scatter chart, turning embeddings into 2D coordinates; Chart.js handles
-    pixel placement, the query's star marker, legends, tooltips and
-    click-to-select, none of which needs computing by hand here.
+    Unlike the old per-opinion distance threshold, matching now happens at
+    the topic level: the query is embedded once (``embed_query_cached``,
+    cached so retuning a slider or picking a different level doesn't
+    re-embed it), then ``_closest_clusters`` finds the N nearest ``Cluster``
+    centroids at the chosen hierarchy layer, and every opinion belonging to
+    any of them is shown together. ``_cluster_results_context`` (shared with
+    ``browse`` below) turns that opinion set into the same plot/list shape
+    the template already knows how to render.
     """
     query = request.GET.get("query", "").strip()
-    max_distance = parse_max_distance(request.GET.get("max_distance"))
+    n = _parse_n(request.GET.get("n"))
     n_neighbors = parse_n_neighbors(request.GET.get("n_neighbors"))
     min_dist = parse_min_dist(request.GET.get("min_dist"))
     n_layers = layer_count()
     topic_level = _parse_topic_level(request.GET.get("topic_level"), n_layers)
 
-    results = []
-    plot_data = None
-    query_sentiment = None
-    query_sentiment_label = None
-    too_few_to_plot = False
+    context = {
+        "query": query,
+        "n": n,
+        "n_neighbors": n_neighbors,
+        "min_dist": min_dist,
+        "topic_level": topic_level,
+        "max_topic_level": max(n_layers - 1, 0),
+        "level_range": range(n_layers),
+        "has_topics": n_layers > 0,
+        "clusters_found": [],
+        "no_matches": False,
+        "weak_match": False,
+        **_empty_results_context(),
+    }
 
-    if query:
-        cached = search_opinions_cached(query, max_distance)
-        rows = cached["rows"]
-        query_sentiment = cached["query_sentiment"]
-        query_sentiment_label = sentiment_label(query_sentiment)
-
-        # Drop each row's embedding for the plain-text results list below --
-        # it's only needed for the projection, computed separately below.
-        # The sentiment and topic labels are added here rather than stored on
-        # the row: both are display concerns derived from what is stored (a
-        # 1-5 score, a whole topic path), the same way "similarity" is derived
-        # from "distance".
-        results = [
-            {
-                **{k: v for k, v in row.items() if k != "embedding"},
-                "sentiment_label": sentiment_label(row["sentiment"]),
-                "topic": _topic_at(row, topic_level),
-            }
-            for row in rows
+    if query and n_layers > 0:
+        query_embedding, query_sentiment = embed_query_cached(query)
+        closest = _closest_clusters(query_embedding, topic_level, n)
+        pairs = _opinions_for_clusters(closest)
+        context["clusters_found"] = [
+            {"label": cluster.label or f"topic {cluster.evoc_id}", "size": cluster.size}
+            for cluster in closest
         ]
-
-        if len(rows) >= MIN_POINTS_TO_PROJECT:
-            plot_data = _build_plot_data(
-                query,
-                rows,
-                cached["query_embedding"],
-                query_sentiment,
-                query_sentiment_label,
-                n_neighbors,
-                min_dist,
-                topic_level,
+        context["no_matches"] = not pairs
+        # "Closest" always returns something if any cluster exists at this
+        # layer, however unrelated -- so a genuine "nothing close" warning
+        # needs its own quality check, not just an empty result. Reusing
+        # clustering.py's own conservative membership distance keeps this
+        # project to one definition of "close enough", rather than a second,
+        # untuned threshold living here.
+        context["weak_match"] = bool(closest) and (
+            closest[0].distance > DEFAULT_ASSIGNMENT_MAX_DISTANCE
+        )
+        context.update(
+            _cluster_results_context(
+                pairs,
+                query=query,
+                query_embedding=query_embedding,
+                query_sentiment=query_sentiment,
+                n_neighbors=n_neighbors,
+                min_dist=min_dist,
             )
-        else:
-            too_few_to_plot = bool(rows)
+        )
+    elif query:
+        context["no_matches"] = True
 
-    return render(
-        request,
-        "opinions/search.html",
-        {
-            "query": query,
-            "max_distance": max_distance,
-            "n_neighbors": n_neighbors,
-            "min_dist": min_dist,
-            "results": results,
-            "plot_data": plot_data,
-            "topic_level": topic_level,
-            "max_topic_level": max(n_layers - 1, 0),
-            "has_topics": n_layers > 0,
-            "query_sentiment": query_sentiment,
-            "query_sentiment_label": query_sentiment_label,
-            "sentiment_labels": SENTIMENT_LABELS,
-            "too_few_to_plot": too_few_to_plot,
-            "min_points_to_plot": MIN_POINTS_TO_PROJECT,
-        },
+    return render(request, "opinions/search.html", context)
+
+
+@require_GET
+def browse(request):
+    """Click-through topic browser: pick a cluster, see its subtopics, repeat.
+
+    Reaching a cluster with no children means there's nowhere narrower to
+    go -- that's a leaf, so its opinions are shown with the same plot/list
+    as ``search`` above (``_cluster_results_context``), just without a typed
+    query or a query point on the plot. The breadcrumb trail is derived by
+    walking ``Cluster.parent`` back from the current cluster rather than
+    carried in the URL, so a bookmarked ``?cluster=`` link always renders
+    the same trail.
+    """
+    cluster_id = request.GET.get("cluster")
+    cluster = get_object_or_404(Cluster, pk=cluster_id) if cluster_id else None
+
+    if cluster is None:
+        # Every cluster EVōC never merged upward hangs directly off the
+        # (unstored) root, not necessarily at the broadest layer -- see
+        # opinions/clustering.py's module docstring -- so "top level" is
+        # every parentless cluster, not just layer == top_layer.
+        options = Cluster.objects.filter(parent__isnull=True).order_by(
+            "-layer", "-size"
+        )
+        return render(
+            request,
+            "opinions/browse.html",
+            {"current": None, "breadcrumbs": [], "options": options},
+        )
+
+    breadcrumbs = _ancestors(cluster)
+    children = cluster.children.order_by("-size")
+    if children.exists():
+        return render(
+            request,
+            "opinions/browse.html",
+            {"current": cluster, "breadcrumbs": breadcrumbs, "options": children},
+        )
+
+    pairs = _opinions_for_clusters([cluster])
+    context = {"current": cluster, "breadcrumbs": breadcrumbs, "options": None}
+    context.update(
+        _cluster_results_context(
+            pairs, n_neighbors=DEFAULT_N_NEIGHBORS, min_dist=DEFAULT_MIN_DIST
+        )
+    )
+    return render(request, "opinions/browse.html", context)
+
+
+def _ancestors(cluster):
+    """``cluster``'s parent chain, broadest first, for a breadcrumb trail."""
+    trail = []
+    node = cluster.parent
+    while node is not None:
+        trail.append(node)
+        node = node.parent
+    trail.reverse()
+    return trail
+
+
+def _closest_clusters(query_embedding, layer, n):
+    """The N ``Cluster``s at ``layer`` whose centroid is nearest ``query_embedding``.
+
+    Same annotate/order_by/CosineDistance pattern already proven against
+    Opinion in opinions/search.py and against Cluster.centroid in
+    opinions/clustering.py's assign_to_nearest_clusters.
+    """
+    return list(
+        Cluster.objects.filter(layer=layer)
+        .annotate(distance=CosineDistance("centroid", query_embedding))
+        .order_by("distance")[:n]
     )
 
 
-def _build_plot_data(
-    query,
-    rows,
-    query_embedding,
-    query_sentiment,
-    query_sentiment_label,
-    n_neighbors,
-    min_dist,
-    topic_level,
-):
-    """Project ``rows``' embeddings and the query to 2D for Chart.js's scatter chart.
+def _opinions_for_clusters(clusters, limit=SEARCH_LIMIT):
+    """(opinion, cluster) pairs for every member of any of ``clusters``.
 
-    UMAP's axes carry no absolute meaning on their own, so nothing is lost by
-    leaving pixel placement to Chart.js (search.html): this only returns the
-    projection's own (x, y) coordinates -- one dict per point Chart.js can
-    use directly as a data point, extra keys riding along for its tooltip
-    and click handler -- plus an axis range that keeps the chart centered on
-    the query rather than on the result set's bounding box, with the same
-    radius applied to both axes so Chart.js's square aspect ratio renders
-    them at one true scale instead of two independently stretched ones.
+    EVōC labels each layer as a single partition, so an opinion belongs to
+    at most one cluster per layer -- these clusters' memberships can't
+    overlap, so no de-duplication is needed across them. Nearest cluster's
+    members come first.
+    """
+    pairs = []
+    for cluster in clusters:
+        if len(pairs) >= limit:
+            break
+        members = cluster.opinions.select_related("author").order_by(
+            "-timestamp", "-pk"
+        )[: limit - len(pairs)]
+        pairs.extend((opinion, cluster) for opinion in members)
+    return pairs
+
+
+def _empty_results_context():
+    return {
+        "results": [],
+        "result_limit": SEARCH_LIMIT,
+        "plot_data": None,
+        "too_few_to_plot": False,
+        "min_points_to_plot": MIN_POINTS_TO_PROJECT,
+        "query_sentiment": None,
+        "query_sentiment_label": None,
+        "sentiment_labels": SENTIMENT_LABELS,
+    }
+
+
+def _cluster_results_context(
+    pairs,
+    query=None,
+    query_embedding=None,
+    query_sentiment=None,
+    n_neighbors=DEFAULT_N_NEIGHBORS,
+    min_dist=DEFAULT_MIN_DIST,
+):
+    """The results list + plot context shared by ``search`` and ``browse``.
+
+    ``pairs`` is a list of ``(Opinion, Cluster)`` -- the cluster each opinion
+    was matched through, already known (see ``_opinions_for_clusters``)
+    rather than looked up again per opinion. The results list omits
+    technical fields (distance/similarity/topic path) on purpose -- cluster
+    membership is the match now, not a per-opinion score -- keeping only
+    what a reader wants: the text, who published it, and when.
+    """
+    context = _empty_results_context()
+    if not pairs:
+        return context
+
+    context["results"] = [
+        {
+            "id": opinion.pk,
+            "text": opinion.text,
+            "author": opinion.author.username if opinion.author_id else None,
+            "date": opinion.timestamp,
+            # Not shown in the list itself (see the template) -- only read
+            # client-side to count the sentiment bar chart's bars.
+            "sentiment": opinion.sentiment,
+        }
+        for opinion, _ in pairs
+    ]
+    context["query_sentiment"] = query_sentiment
+    context["query_sentiment_label"] = (
+        sentiment_label(query_sentiment) if query_sentiment is not None else None
+    )
+
+    if len(pairs) >= MIN_POINTS_TO_PROJECT:
+        context["plot_data"] = _build_cluster_plot_data(
+            pairs, query, query_embedding, query_sentiment, n_neighbors, min_dist
+        )
+    else:
+        context["too_few_to_plot"] = True
+    return context
+
+
+def _build_cluster_plot_data(
+    pairs, query, query_embedding, query_sentiment, n_neighbors, min_dist
+):
+    """Project ``pairs``' embeddings (and the query, if any) to 2D for Chart.js.
+
+    Mirrors the old _build_plot_data's shape (points/axis_range/topics[/query_point])
+    so search.html's existing Chart.js code keeps working; the difference is
+    where each point's topic label comes from -- directly off the cluster it
+    was matched through, rather than re-derived from a stored per-opinion
+    topic path.
     """
     coords, query_coord = project_2d(
-        [row["embedding"] for row in rows],
+        [opinion.embedding for opinion, _ in pairs],
         query_embedding=query_embedding,
         n_neighbors=n_neighbors,
         min_dist=min_dist,
     )
     xs, ys = coords[:, 0], coords[:, 1]
-    query_x, query_y = float(query_coord[0]), float(query_coord[1])
 
     points = [
         {
             "x": float(x),
             "y": float(y),
-            "text": row["text"],
-            "topic": _topic_at(row, topic_level),
-            "topics": row["topics"],
-            "author": row["author"],
-            "similarity": row["similarity"],
-            "sentiment": row["sentiment"],
-            "sentiment_label": sentiment_label(row["sentiment"]),
+            "text": opinion.text,
+            "topic": cluster.label or f"topic {cluster.evoc_id}",
+            "author": opinion.author.username if opinion.author_id else None,
+            "sentiment": opinion.sentiment,
+            "sentiment_label": sentiment_label(opinion.sentiment),
         }
-        for row, x, y in zip(rows, xs, ys)
+        for (opinion, cluster), x, y in zip(pairs, xs, ys)
     ]
 
+    if query_coord is not None:
+        center_x, center_y = float(query_coord[0]), float(query_coord[1])
+    else:
+        center_x, center_y = float(xs.mean()), float(ys.mean())
+
     # float(...) here, not just on the pieces above: numpy's .max() returns a
-    # numpy scalar (float32), which json_script's json.dumps can't serialize
-    # -- unlike the coordinates above, nothing downstream converts this one.
-    radius = float(max(np.abs(xs - query_x).max(), np.abs(ys - query_y).max()) or 1.0)
+    # numpy scalar (float32), which json_script's json.dumps can't serialize.
+    radius = float(max(np.abs(xs - center_x).max(), np.abs(ys - center_y).max()) or 1.0)
     radius *= AXIS_PADDING_FACTOR
 
-    return {
+    plot_data = {
         "points": points,
-        "query_point": {
-            "x": query_x,
-            "y": query_y,
-            "is_query": True,
-            "text": query,
-            "sentiment": query_sentiment,
-            "sentiment_label": query_sentiment_label,
-        },
         "axis_range": {
-            "min_x": query_x - radius,
-            "max_x": query_x + radius,
-            "min_y": query_y - radius,
-            "max_y": query_y + radius,
+            "min_x": center_x - radius,
+            "max_x": center_x + radius,
+            "min_y": center_y - radius,
+            "max_y": center_y + radius,
         },
-        # One entry per topic present at the chosen layer, for Chart.js to
-        # turn into one dataset each (which is also what draws the legend).
+        # One entry per topic present, for Chart.js to turn into one
+        # dataset each (which is also what draws the legend).
         "topics": [
             {"name": topic, "color": _topic_color(topic)}
             for topic in sorted({point["topic"] for point in points})
         ],
     }
+    if query_coord is not None:
+        plot_data["query_point"] = {
+            "x": center_x,
+            "y": center_y,
+            "is_query": True,
+            "text": query,
+            "sentiment": query_sentiment,
+            "sentiment_label": (
+                sentiment_label(query_sentiment)
+                if query_sentiment is not None
+                else None
+            ),
+        }
+    return plot_data
+
+
+def _parse_n(raw_value):
+    """Coerce the "max related topics" field into [MIN_N, MAX_N]."""
+    try:
+        value = int(float(raw_value))
+    except (TypeError, ValueError):
+        return DEFAULT_N
+    return min(max(value, MIN_N), MAX_N)
 
 
 def _parse_topic_level(raw_value, n_layers):
-    """Coerce the topic-level slider into a layer of the stored hierarchy.
+    """Coerce the topic-level control into a layer of the stored hierarchy.
 
     0 is the finest layer, higher numbers are broader topics -- the same
     direction as ``Cluster.layer``. Clamped to what has actually been
@@ -200,21 +349,6 @@ def _parse_topic_level(raw_value, n_layers):
     except (TypeError, ValueError):
         return 0
     return min(max(value, 0), max(n_layers - 1, 0))
-
-
-def _topic_at(row, topic_level):
-    """The label of ``row``'s topic at ``topic_level``.
-
-    An opinion is missing from a layer it was noise in, and its path can be
-    shorter than the hierarchy is deep, so this looks the layer up rather than
-    indexing -- falling back to UNCLUSTERED_LABEL rather than to a
-    neighbouring layer, since showing a broader topic in a finer layer's place
-    would misrepresent what the clustering actually found.
-    """
-    for topic in row["topics"]:
-        if topic["layer"] == topic_level:
-            return topic["label"] or f"topic {topic_level}"
-    return UNCLUSTERED_LABEL
 
 
 def _topic_color(topic, num_hues=24):
