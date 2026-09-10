@@ -32,36 +32,15 @@ fixture, load a sample of real tweets from sitting US Senators
 on the Hugging Face Hub) and cluster them in one step:
 ```bash
 uv run python manage.py load_senator_tweets
+
+# since the dataset on hugging face doesn't include them
+uv run python manage.py add_fictional_geo_time
 ```
 This replaces whatever Opinions already exist with a fresh, reproducible
 500-tweet sample (`--limit` to change the size — expect roughly 1.5
 tweets/second to embed on a CPU-only machine, so 500 is ~6 minutes) and
 clusters it automatically. Run `--help` for the rest of the options
 (`--seed`, `--keep-existing`, `--skip-cluster`, ...).
-
-## Fictional geography and timestamps
-
-Neither the hand-written fixture nor `load_senator_tweets` provides a real
-location (senator tweets carry no reliable public geotag), and every
-bulk-loaded batch shares one `timestamp` (set at load time). Without those,
-`/search/`'s geographic map and date-range filter have nothing to show. Fill
-them in with:
-```bash
-uv run python manage.py add_fictional_geo_time
-```
-This assigns every existing Opinion a **fictional** location — drawn from a
-fixed list of real US city coordinates in
-[`opinions/fictional_locations.json`](opinions/fictional_locations.json), never a
-claim about any actual author's real location — and a fictional timestamp
-spread over the last two years (`--days` to change the span). The same author
-always gets the same city, so their opinions don't jump around the map; an
-anonymous opinion gets its own independent pick. Pass `--only-missing` to fill
-in only opinions that don't have a location yet, instead of reassigning every
-one. Given the same `--seed` (default: `42`) and the same corpus, the choice of
-city and each opinion's offset into the date range reproduce exactly — the
-same way `load_senator_tweets --seed` does; only the date range's anchor point
-("now") legitimately moves between runs, since the point is to always look
-recent, not frozen at first use.
 
 ## Develop without Docker
 
