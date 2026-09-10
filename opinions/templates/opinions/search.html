@@ -1,237 +1,71 @@
-<title>Search opinions</title>
+{% extends "opinions/base.html" %}
+{% block title %}Search opinions — HiveMind{% endblock %}
+{% block page_variant %}exploration-shell{% endblock %}
+{% block content %}
+<main class="exploration-container exploration-main topic-page" id="main-content">
+  <nav class="page-breadcrumb" aria-label="Breadcrumb"><a href="/">Home</a><span aria-hidden="true">&rsaquo;</span><span aria-current="page">Search</span></nav>
+  <header class="topic-heading">
+    <p class="topic-dataset">Discovered topics</p>
+    <h1>Search opinions</h1>
+    <p>Find the topics closest to a statement, discovered automatically from the corpus itself.</p>
+    <a class="civic-text-button" href="{% url 'opinions:browse' %}">Prefer to click through topics instead? &rarr;</a>
+  </header>
 
-<style>
-    /* Minimal, only what's needed to make the charts and their interactions legible. */
-    #sentiment-chart-wrapper { position: relative; max-width: 32em; height: 260px; margin: 0.5rem 0; }
-    #scatter-chart-wrapper { position: relative; max-width: 46em; margin: 0.5rem 0; }
-    #opinion-detail { border: 1px solid #ccc; padding: 0.6rem 0.8rem; margin-top: 0.5rem; max-width: 40em; }
-    #opinion-detail p { margin: 0.2em 0; }
-</style>
-
-<h1>Search opinions</h1>
-
-<form method="get">
-    <p>
-        <label for="query">Statement:</label>
-        <input type="text" id="query" name="query" value="{{ query }}" size="60">
-    </p>
-    <p>
-        <label for="max_distance">Max distance/scale ({{ max_distance }}):</label>
-        <input type="range" id="max_distance" name="max_distance"
-               min="0" max="1" step="0.01" value="{{ max_distance }}"
-               oninput="document.getElementById('max_distance_output').textContent = this.value">
-        <output id="max_distance_output">{{ max_distance }}</output>
-    </p>
-    <p>
-        <label for="n_neighbors">UMAP n_neighbors ({{ n_neighbors }}):</label>
-        <input type="range" id="n_neighbors" name="n_neighbors"
-               min="2" max="50" step="1" value="{{ n_neighbors }}"
+  <form method="get" class="cluster-search-form">
+    <div class="opinion-search-controls">
+      <label class="civic-sr-only" for="query">Statement</label>
+      <input type="search" id="query" name="query" value="{{ query }}" placeholder="A topic or statement, such as affordable housing">
+      <button class="civic-button" type="submit">Search</button>
+    </div>
+    <div class="cluster-search-sliders">
+      <label for="n">Related topics ({{ n }})
+        <input type="range" id="n" name="n" min="1" max="20" step="1" value="{{ n }}"
+               oninput="document.getElementById('n_output').textContent = this.value">
+        <output id="n_output">{{ n }}</output>
+      </label>
+      <label for="n_neighbors">Map n_neighbors ({{ n_neighbors }})
+        <input type="range" id="n_neighbors" name="n_neighbors" min="2" max="50" step="1" value="{{ n_neighbors }}"
                oninput="document.getElementById('n_neighbors_output').textContent = this.value">
         <output id="n_neighbors_output">{{ n_neighbors }}</output>
-        <small>local (low) &harr; global (high) structure; clamped to fewer than the number of results</small>
-    </p>
-    <p>
-        <label for="min_dist">UMAP min_dist ({{ min_dist }}):</label>
-        <input type="range" id="min_dist" name="min_dist"
-               min="0" max="0.99" step="0.01" value="{{ min_dist }}"
+      </label>
+      <label for="min_dist">Map min_dist ({{ min_dist }})
+        <input type="range" id="min_dist" name="min_dist" min="0" max="0.99" step="0.01" value="{{ min_dist }}"
                oninput="document.getElementById('min_dist_output').textContent = this.value">
         <output id="min_dist_output">{{ min_dist }}</output>
-        <small>how tightly points may be packed</small>
-    </p>
-    <p>
-        <label for="topic_level">Topic level ({{ topic_level }}):</label>
-        <input type="range" id="topic_level" name="topic_level"
-               min="0" max="{{ max_topic_level }}" step="1" value="{{ topic_level }}"
-               {% if not has_topics %}disabled{% endif %}
-               oninput="document.getElementById('topic_level_output').textContent = this.value">
-        <output id="topic_level_output">{{ topic_level }}</output>
-        <small>
-            {% if has_topics %}
-                0 = narrowest discovered topics, {{ max_topic_level }} = broadest
-            {% else %}
-                no topics discovered yet &mdash; run <code>manage.py recluster</code>
-            {% endif %}
-        </small>
-    </p>
-    <p>
-        <button type="submit">Search</button>
-    </p>
-</form>
+      </label>
+    </div>
+    <input type="hidden" name="topic_level" value="{{ topic_level }}">
+  </form>
 
-{% if query %}
-    <h2>Results for &ldquo;{{ query }}&rdquo;</h2>
-
-    {% if query_sentiment %}
-        <p>Your query's sentiment: {{ query_sentiment_label }} ({{ query_sentiment }}/5)</p>
-    {% endif %}
-
-    {% if results %}
-        <h3>Sentiment distribution</h3>
-        <p>The highlighted bar is your query's own sentiment.</p>
-        <div id="sentiment-chart-wrapper"><canvas id="sentiment-chart"></canvas></div>
-
-        {% if plot_data %}
-            <h3>Projection</h3>
-            <p>
-                The plot is centered on your query (the star marker); its closest matches land nearest to it.
-                Colours are the topics discovered at level {{ topic_level }} of the hierarchy.
-            </p>
-            <div id="scatter-chart-wrapper"><canvas id="scatter-chart"></canvas></div>
-            <div id="opinion-detail" hidden>
-                <p><strong id="opinion-topic"></strong></p>
-                <p id="opinion-text"></p>
-                <p>by <span id="opinion-author"></span> &mdash; similarity <span id="opinion-similarity"></span></p>
-                <p>sentiment: <span id="opinion-sentiment"></span></p>
-                <p>topic path (narrow &rarr; broad): <span id="opinion-topic-path"></span></p>
-            </div>
-        {% elif too_few_to_plot %}
-            <p>Only {{ results|length }} result(s) &mdash; need at least {{ min_points_to_plot }} to plot a projection.</p>
-        {% endif %}
-
-        <h3>List</h3>
-        <ul>
-            {% for result in results %}
-                <li>
-                    {{ result.text }}
-                    (similarity: {{ result.similarity|floatformat:4 }}, topic: {{ result.topic }},
-                    sentiment: {{ result.sentiment_label }} ({{ result.sentiment|default:"?" }}/5),
-                    by {{ result.author|default:"anonymous" }})
-                </li>
-            {% endfor %}
-        </ul>
-
-        {{ results|json_script:"results-data" }}
-        {% if plot_data %}{{ plot_data|json_script:"plot-data" }}{% endif %}
-        {{ sentiment_labels|json_script:"sentiment-labels-data" }}
-        {{ query_sentiment|json_script:"query-sentiment-data" }}
-
-        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-        <script>
-            (function () {
-                function readJSON(id) {
-                    var el = document.getElementById(id);
-                    return el ? JSON.parse(el.textContent) : null;
-                }
-
-                var results = readJSON('results-data') || [];
-                var plotData = readJSON('plot-data');
-                var sentimentLabels = readJSON('sentiment-labels-data') || {};
-                var querySentiment = readJSON('query-sentiment-data');
-
-                function showOpinion(point) {
-                    document.getElementById('opinion-topic').textContent =
-                        point.is_query ? 'Your search query' : point.topic;
-                    // The whole discovered hierarchy for this opinion, not just
-                    // the layer currently being coloured by.
-                    document.getElementById('opinion-topic-path').textContent = point.is_query
-                        ? 'n/a — not a stored opinion'
-                        : (point.topics || []).map(function (t) {
-                              return 'L' + t.layer + ': ' + (t.label || '?');
-                          }).join('  →  ') || 'unclustered';
-                    document.getElementById('opinion-text').textContent = point.text;
-                    document.getElementById('opinion-author').textContent = point.is_query
-                        ? '(this is what you typed, not a stored opinion)'
-                        : point.author;
-                    document.getElementById('opinion-similarity').textContent = point.is_query
-                        ? 'n/a'
-                        : point.similarity.toFixed(4);
-                    document.getElementById('opinion-sentiment').textContent =
-                        point.sentiment_label + ' (' + point.sentiment + '/5)';
-                    document.getElementById('opinion-detail').hidden = false;
-                }
-
-                // --- Sentiment distribution: a bar per 1-5 score, counted from
-                // the current results; the bar matching the query's own score
-                // (if any) is drawn in a different colour. ---
-                var counts = [0, 0, 0, 0, 0];
-                results.forEach(function (r) {
-                    if (r.sentiment) counts[r.sentiment - 1]++;
-                });
-                new Chart(document.getElementById('sentiment-chart'), {
-                    type: 'bar',
-                    data: {
-                        labels: [1, 2, 3, 4, 5].map(function (s) {
-                            return s + ' (' + sentimentLabels[s] + ')';
-                        }),
-                        datasets: [{
-                            label: 'opinions',
-                            data: counts,
-                            backgroundColor: [1, 2, 3, 4, 5].map(function (s) {
-                                return s === querySentiment ? '#d62728' : '#1f77b4';
-                            }),
-                        }],
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
-                    },
-                });
-
-                // --- Projection: one dataset per topic (Chart.js draws the
-                // legend and per-topic colouring for free) plus a starred
-                // dataset for the query itself. ---
-                if (plotData) {
-                    var datasets = plotData.topics.map(function (topic) {
-                        return {
-                            label: topic.name,
-                            backgroundColor: topic.color,
-                            data: plotData.points.filter(function (p) { return p.topic === topic.name; }),
-                        };
-                    });
-                    datasets.push({
-                        label: 'your query',
-                        // Chart.js draws "star" as strokes, not a filled
-                        // shape, so its colour comes from border*, not
-                        // backgroundColor (set anyway, for the legend swatch).
-                        backgroundColor: '#000',
-                        borderColor: '#000',
-                        borderWidth: 2,
-                        pointStyle: 'star',
-                        pointRadius: 10,
-                        pointHoverRadius: 12,
-                        data: [plotData.query_point],
-                    });
-
-                    var scatterChart = new Chart(document.getElementById('scatter-chart'), {
-                        type: 'scatter',
-                        data: { datasets: datasets },
-                        options: {
-                            responsive: true,
-                            aspectRatio: 1,
-                            // UMAP's axes carry no absolute meaning, so only
-                            // their range (centered on the query -- see
-                            // opinions/views.py::_build_plot_data) matters,
-                            // not their tick labels.
-                            scales: {
-                                x: { min: plotData.axis_range.min_x, max: plotData.axis_range.max_x, display: false },
-                                y: { min: plotData.axis_range.min_y, max: plotData.axis_range.max_y, display: false },
-                            },
-                            plugins: {
-                                tooltip: {
-                                    callbacks: {
-                                        title: function () { return ''; },
-                                        label: function (context) {
-                                            var d = context.raw;
-                                            var label = d.is_query ? 'your query' : d.topic;
-                                            var text = d.text.length > 50 ? d.text.slice(0, 50) + '…' : d.text;
-                                            return label + ': ' + text;
-                                        },
-                                    },
-                                },
-                            },
-                            onClick: function (event, elements) {
-                                if (!elements.length) return;
-                                var el = elements[0];
-                                showOpinion(scatterChart.data.datasets[el.datasetIndex].data[el.index]);
-                            },
-                        },
-                    });
-                }
-            })();
-        </script>
+  {% if query %}
+    {% if not has_topics %}
+      <p class="opinion-search-note">No topics have been discovered yet &mdash; run <code>manage.py recluster</code> first.</p>
     {% else %}
-        <p>No opinions found in that range.</p>
+      <nav class="topic-level-tabs" aria-label="Topic hierarchy level">
+        {% for level_index in level_range %}
+          <a href="?query={{ query|urlencode }}&amp;n={{ n }}&amp;n_neighbors={{ n_neighbors }}&amp;min_dist={{ min_dist }}&amp;topic_level={{ level_index }}"
+             class="{% if level_index == topic_level %}is-current{% endif %}">
+            Level {{ level_index }}{% if level_index == 0 %} (narrowest){% elif level_index == max_topic_level %} (broadest){% endif %}
+          </a>
+        {% endfor %}
+      </nav>
+
+      {% if clusters_found %}
+        <p class="cluster-search-matches">
+          Closest topic{{ clusters_found|length|pluralize }} at this level:
+          {% for cluster in clusters_found %}<span class="cluster-chip">{{ cluster.label }} ({{ cluster.size }})</span>{% endfor %}
+        </p>
+      {% endif %}
+
+      {% if no_matches %}
+        <p class="opinion-search-note">No discovered topic came back close to that search. Try different wording, more related topics, or a broader level.</p>
+      {% else %}
+        {% if weak_match %}
+          <p class="opinion-search-note">No discovered topic is a strong match for that search &mdash; showing the closest one anyway. Try different wording or a broader level.</p>
+        {% endif %}
+        {% include "opinions/_cluster_results.html" %}
+      {% endif %}
     {% endif %}
-{% endif %}
+  {% endif %}
+</main>
+{% endblock %}

@@ -1,0 +1,217 @@
+{% comment %}
+Expects: results, result_limit, plot_data, too_few_to_plot, min_points_to_plot,
+query_sentiment, query_sentiment_label, sentiment_labels.
+{% endcomment %}
+{% if results %}
+  <section class="atlas-chart-panel" aria-labelledby="sentiment-chart-heading">
+    <header class="atlas-chart-heading">
+      <div>
+        <p class="search-map-eyebrow">Opinion overview</p>
+        <h2 id="sentiment-chart-heading">Sentiment distribution</h2>
+        <p>
+          {{ results|length }} opinion{{ results|length|pluralize }}
+          {% if query_sentiment %} &middot; your query&rsquo;s sentiment: {{ query_sentiment_label }} ({{ query_sentiment }}/5){% endif %}
+        </p>
+      </div>
+    </header>
+    <div id="sentiment-chart-wrapper"><canvas id="sentiment-chart"></canvas></div>
+    <p class="atlas-chart-note">Hover a bar to highlight opinions with that sentiment on the map below.</p>
+  </section>
+
+  {% if plot_data %}
+    <section class="atlas-chart-panel" aria-labelledby="scatter-chart-heading">
+      <header class="atlas-chart-heading">
+        <div>
+          <p class="search-map-eyebrow">Opinion map</p>
+          <h2 id="scatter-chart-heading">Where these opinions sit</h2>
+          <p>Colours are discovered topics{% if query_sentiment %}; the star is your query{% endif %}. Drag to pan, scroll or pinch to zoom.</p>
+        </div>
+        <button type="button" class="atlas-reset" id="reset-zoom">Reset view</button>
+      </header>
+      <div id="scatter-chart-wrapper"><canvas id="scatter-chart"></canvas></div>
+      <div class="opinion-detail-callout" id="opinion-detail" hidden>
+        <p><strong id="opinion-topic"></strong></p>
+        <p id="opinion-text"></p>
+        <p>by <span id="opinion-author"></span></p>
+        <p>sentiment: <span id="opinion-sentiment"></span></p>
+      </div>
+      <p class="atlas-chart-note">Dot positions are a 2D map of opinion similarity; they do not measure agreement with the topic.</p>
+    </section>
+  {% elif too_few_to_plot %}
+    <p class="opinion-search-note">Only {{ results|length }} opinion{{ results|length|pluralize }} &mdash; need at least {{ min_points_to_plot }} to plot a map.</p>
+  {% endif %}
+
+  <section class="opinion-detail" aria-labelledby="reading-heading" data-reveal-more data-reveal-batch="10">
+    <header class="opinion-detail-heading">
+      <div>
+        <h2 id="reading-heading">Original words</h2>
+        <p>{{ results|length }} opinion{{ results|length|pluralize }}{% if results|length == result_limit %} &middot; limit {{ result_limit }}{% endif %}</p>
+      </div>
+    </header>
+    {% for item in results %}
+      <article class="opinion-reason-row search-opinion-row" data-reveal-item>
+        <p>{{ item.text }}</p>
+        <p class="search-source-reference">by {{ item.author|default:"anonymous" }} &middot; {{ item.date|date:"j M Y" }}</p>
+      </article>
+    {% endfor %}
+    <button type="button" class="civic-text-button" data-reveal-trigger hidden>Show more &rarr;</button>
+  </section>
+
+  {{ results|json_script:"results-data" }}
+  {% if plot_data %}{{ plot_data|json_script:"plot-data" }}{% endif %}
+  {{ sentiment_labels|json_script:"sentiment-labels-data" }}
+  {{ query_sentiment|json_script:"query-sentiment-data" }}
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script>
+    (function () {
+      function readJSON(id) {
+        var el = document.getElementById(id);
+        return el ? JSON.parse(el.textContent) : null;
+      }
+
+      var results = readJSON('results-data') || [];
+      var plotData = readJSON('plot-data');
+      var sentimentLabels = readJSON('sentiment-labels-data') || {};
+      var querySentiment = readJSON('query-sentiment-data');
+
+      function showOpinion(point) {
+        document.getElementById('opinion-topic').textContent =
+          point.is_query ? 'Your search query' : point.topic;
+        document.getElementById('opinion-text').textContent = point.text;
+        document.getElementById('opinion-author').textContent = point.is_query
+          ? '(this is what you typed, not a stored opinion)'
+          : (point.author || 'anonymous');
+        document.getElementById('opinion-sentiment').textContent =
+          point.sentiment_label + ' (' + point.sentiment + '/5)';
+        document.getElementById('opinion-detail').hidden = false;
+      }
+
+      // --- Sentiment distribution: a bar per 1-5 score, counted from the
+      // current results; the bar matching the query's own score (if any) is
+      // drawn in a different colour. ---
+      var counts = [0, 0, 0, 0, 0];
+      results.forEach(function (r) {
+        if (r.sentiment) counts[r.sentiment - 1]++;
+      });
+
+      var scatterChart = null;
+      var DEFAULT_RADIUS = 4;
+      var HIGHLIGHT_RADIUS = 7;
+      var DIM_RADIUS = 2.5;
+
+      function highlightSentiment(score) {
+        if (!scatterChart) return;
+        scatterChart.data.datasets.forEach(function (dataset) {
+          if (dataset.isQuery) return;
+          dataset.pointRadius = dataset.data.map(function (point) {
+            if (score == null) return DEFAULT_RADIUS;
+            return point.sentiment === score ? HIGHLIGHT_RADIUS : DIM_RADIUS;
+          });
+        });
+        scatterChart.update('none');
+      }
+
+      new Chart(document.getElementById('sentiment-chart'), {
+        type: 'bar',
+        data: {
+          labels: [1, 2, 3, 4, 5].map(function (s) {
+            return s + ' (' + sentimentLabels[s] + ')';
+          }),
+          datasets: [{
+            label: 'opinions',
+            data: counts,
+            backgroundColor: [1, 2, 3, 4, 5].map(function (s) {
+              return s === querySentiment ? '#d62728' : '#1f77b4';
+            }),
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+          onHover: function (event, elements) {
+            highlightSentiment(elements.length ? elements[0].index + 1 : null);
+          },
+        },
+      });
+
+      // --- Map: one dataset per topic (Chart.js draws the legend and
+      // per-topic colouring for free) plus a starred dataset for the query,
+      // pannable/zoomable via chartjs-plugin-zoom. ---
+      if (plotData) {
+        var datasets = plotData.topics.map(function (topic) {
+          return {
+            label: topic.name,
+            backgroundColor: topic.color,
+            pointRadius: DEFAULT_RADIUS,
+            data: plotData.points.filter(function (p) { return p.topic === topic.name; }),
+          };
+        });
+        if (plotData.query_point) {
+          datasets.push({
+            label: 'your query',
+            isQuery: true,
+            // Chart.js draws "star" as strokes, not a filled shape, so its
+            // colour comes from border*, not backgroundColor (set anyway,
+            // for the legend swatch).
+            backgroundColor: '#000',
+            borderColor: '#000',
+            borderWidth: 2,
+            pointStyle: 'star',
+            pointRadius: 10,
+            pointHoverRadius: 12,
+            data: [plotData.query_point],
+          });
+        }
+
+        scatterChart = new Chart(document.getElementById('scatter-chart'), {
+          type: 'scatter',
+          data: { datasets: datasets },
+          options: {
+            responsive: true,
+            aspectRatio: 1,
+            // UMAP's axes carry no absolute meaning, so only their range
+            // (see opinions/views.py::_build_cluster_plot_data) matters,
+            // not their tick labels.
+            scales: {
+              x: { min: plotData.axis_range.min_x, max: plotData.axis_range.max_x, display: false },
+              y: { min: plotData.axis_range.min_y, max: plotData.axis_range.max_y, display: false },
+            },
+            plugins: {
+              zoom: {
+                pan: { enabled: true, mode: 'xy' },
+                zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' },
+              },
+              tooltip: {
+                callbacks: {
+                  title: function () { return ''; },
+                  label: function (context) {
+                    var d = context.raw;
+                    var label = d.is_query ? 'your query' : d.topic;
+                    var text = d.text.length > 50 ? d.text.slice(0, 50) + '…' : d.text;
+                    return label + ': ' + text;
+                  },
+                },
+              },
+            },
+            onClick: function (event, elements) {
+              if (!elements.length) return;
+              var el = elements[0];
+              showOpinion(scatterChart.data.datasets[el.datasetIndex].data[el.index]);
+            },
+          },
+        });
+
+        var resetButton = document.getElementById('reset-zoom');
+        if (resetButton) {
+          resetButton.addEventListener('click', function () { scatterChart.resetZoom(); });
+        }
+      }
+    })();
+  </script>
+{% else %}
+  <p class="search-no-results">No opinions to show yet.</p>
+{% endif %}

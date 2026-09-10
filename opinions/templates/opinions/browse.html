@@ -1,0 +1,50 @@
+{% extends "opinions/base.html" %}
+{% block title %}Browse topics — HiveMind{% endblock %}
+{% block page_variant %}exploration-shell{% endblock %}
+{% block content %}
+<main class="exploration-container exploration-main topic-page" id="main-content">
+  <nav class="page-breadcrumb" aria-label="Breadcrumb">
+    <a href="/">Home</a><span aria-hidden="true">&rsaquo;</span>
+    <a href="{% url 'opinions:browse' %}">Browse topics</a>
+    {% for ancestor in breadcrumbs %}
+      <span aria-hidden="true">&rsaquo;</span>
+      <a href="{% url 'opinions:browse' %}?cluster={{ ancestor.pk }}">{{ ancestor.label|default:"untitled topic" }}</a>
+    {% endfor %}
+    {% if current %}
+      <span aria-hidden="true">&rsaquo;</span>
+      <span aria-current="page">{{ current.label|default:"untitled topic" }}</span>
+    {% endif %}
+  </nav>
+
+  <header class="topic-heading">
+    <p class="topic-dataset">Discovered topics</p>
+    <h1>{% if current %}{{ current.label|default:"untitled topic" }}{% else %}Browse topics{% endif %}</h1>
+    {% if not current %}
+      <p>Click a topic to see its subtopics, and keep going until you reach one with none.</p>
+      <a class="civic-text-button" href="{% url 'opinions:search' %}">Prefer to search by statement instead? &rarr;</a>
+    {% endif %}
+  </header>
+
+  {% if options is not None %}
+    {% if options %}
+      <ul class="cluster-browse-list">
+        {% for cluster in options %}
+          <li>
+            <a href="{% url 'opinions:browse' %}?cluster={{ cluster.pk }}">
+              <div>
+                <h3>{{ cluster.label|default:"untitled topic" }}</h3>
+                <p>{{ cluster.size }} opinion{{ cluster.size|pluralize }}</p>
+              </div>
+              <span aria-hidden="true">&rarr;</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="opinion-search-note">No topics have been discovered yet &mdash; run <code>manage.py recluster</code> first.</p>
+    {% endif %}
+  {% else %}
+    {% include "opinions/_cluster_results.html" %}
+  {% endif %}
+</main>
+{% endblock %}

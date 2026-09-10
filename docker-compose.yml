@@ -1,8 +1,8 @@
 # Local prototype: Django (server-rendered frontend + PostgreSQL).
 # The backend and database keep the same Nix environment as flake.lock.
 #
-#   docker compose up --build          # website at http://localhost:8000
-#   docker compose run --rm --entrypoint uv web run pytest  # fast tests (see README)
+#  docker compose up --build          # website at http://localhost:8000
+#   docker compose run --rm --entrypoint /app/.venv/bin/python web -m pytest
 services:
   db:
     build:
@@ -16,6 +16,7 @@ services:
       retries: 10
 
   web:
+    entrypoint: ["/bin/sh", "/app/docker/app/entrypoint.sh"]
     build:
       context: .
       dockerfile: docker/app/Dockerfile
@@ -33,9 +34,13 @@ services:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/topics/', timeout=3)"]
       interval: 5s
       timeout: 5s
-      start_period: 60s
+      start_period: 30m
       retries: 24
     volumes:
+      # Reuse the image while editing source; restart for Python/template changes.
+      - ./docker/app:/app/docker/app:ro
+      - ./opinions:/app/opinions:ro
+      - ./opinionsearch:/app/opinionsearch:ro
       # Model weights are multi-GB (see CLAUDE.md's Opinion.save() gotcha) --
       # keep them across `down`/`up` instead of re-downloading every time.
       - hf-cache:/data/hf-cache

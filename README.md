@@ -2,21 +2,33 @@
 
 ## Run the website
 
-Install and start Docker with Compose support (Docker Desktop includes both).
-From the repository root, run:
+Install Docker Desktop on macOS, or Docker Engine with the Compose plugin on
+Linux. From the repository root, run:
 
 ```bash
-docker compose up --build
+./run
 ```
 
-Once the healthcheck passes, open **[http://localhost:8000](http://localhost:8000)**.
+The launcher waits for the database and models, then opens
+**[http://localhost:8000](http://localhost:8000)** in Safari on macOS or the default
+browser on a Linux desktop. Without a desktop/browser opener it prints the URL.
+On macOS it can start Docker Desktop; on Linux Docker must already be running
+and accessible to your user.
+
 This starts the database, applies migrations and starts Django, which serves the
 whole website (issue form, topic search/browse, saved-contribution pages) directly
 as server-rendered HTML — no separate frontend process, Node or `.env` setup is
-needed. The first build downloads sizeable dependencies, and the first search or
-submission also downloads model weights.
+needed. Existing images and downloaded models are reused. The first run builds
+missing images and downloads model weights; allow time for those downloads.
+Embedding, sentiment and topic classification are prepared in the serving process
+before it accepts requests. Preparation failures prevent startup. Progress is
+available with `docker compose logs -f web`.
 
-Press **Ctrl+C** to stop. Run the same command to start again. Database contents
+Services run in the background. Use `docker compose stop` to stop them and `./run`
+to start again. Python and template changes need `./run --force-recreate` because
+automatic reload is disabled to keep prepared models in one process. CSS and
+JavaScript changes need a browser refresh. Use `./run --build` after changing
+dependencies or Dockerfiles. Database contents
 and model downloads persist in Docker volumes; `docker compose down` also keeps
 them. If port 8000 is occupied, stop the previous server first.
 
@@ -61,7 +73,7 @@ same process, so there is nothing else to start.
 ## Tests
 
 Everyday checks use fixed model outputs; they still exercise the PostgreSQL
-database and API. Real-model checks live in one opt-in integration folder.
+database and public forms/pages. Real-model checks live in one opt-in integration folder.
 
 ```text
 opinions/tests/
@@ -79,14 +91,14 @@ opinions/tests/
 From the repository root:
 
 ```bash
-docker compose run --rm --entrypoint uv web run pytest                 # everyday checks
-docker compose run --rm --entrypoint uv web run pytest -m integration  # real models
+docker compose run --rm --entrypoint /app/.venv/bin/python web -m pytest                 # everyday checks
+docker compose run --rm --entrypoint /app/.venv/bin/python web -m pytest -m integration  # real models
 ```
 
 The entrypoint override runs pytest directly without the web startup's migrations
 or admin creation. Docker starts the database dependency; tests use
-`test_opinionsearch`, separate from the application database. Rebuild the web
-image after changing tests (`docker compose build web`).
+`test_opinionsearch`, separate from the application database. Source files are
+mounted, so changing tests does not require an image rebuild.
 
 In the local development environment, use `uv run pytest` or
 `uv run pytest -m integration`. To run everything, use `uv run pytest -m ''`.

@@ -4,6 +4,35 @@
 (function () {
   'use strict';
 
+  // Keep feedback local to each form. Resizing never changes sending state.
+  document.querySelectorAll('form[data-busy-label]').forEach(function (form) {
+    var button = form.querySelector('button[type="submit"]');
+    var field = form.querySelector('textarea[name="text"]');
+    var originalLabel = button.innerHTML;
+    function updateButton() {
+      button.disabled = form.getAttribute('aria-busy') === 'true' || Boolean(field && !field.value.trim());
+    }
+    form.addEventListener('submit', function (event) {
+      if (button.disabled) {
+        event.preventDefault();
+        return;
+      }
+      form.setAttribute('aria-busy', 'true');
+      button.textContent = form.getAttribute('data-busy-label');
+      if (field) field.readOnly = true;
+      updateButton();
+    });
+    // Browsers can restore the sending state when returning with Back.
+    window.addEventListener('pageshow', function () {
+      form.removeAttribute('aria-busy');
+      button.innerHTML = originalLabel;
+      if (field) field.readOnly = false;
+      updateButton();
+    });
+    if (field) field.addEventListener('input', updateButton);
+    updateButton();
+  });
+
   // Auto-grow the issue textarea as the visitor types (was a layout effect
   // in the old React composer).
   document.querySelectorAll('[data-autogrow]').forEach(function (field) {
@@ -12,6 +41,7 @@
       field.style.height = Math.min(field.scrollHeight, 240) + 'px';
     };
     field.addEventListener('input', resize);
+    window.addEventListener('resize', resize);
     resize();
   });
 
@@ -76,6 +106,27 @@
     });
     resetButtons.forEach(function (button) {
       button.addEventListener('click', function () { apply(null); });
+    });
+  });
+
+  // Show only the first batch of a long list, with a button to reveal more.
+  // Every item stays in the DOM and visible by default, so this only adds a
+  // limit -- with JS disabled the visitor just sees the full list.
+  document.querySelectorAll('[data-reveal-more]').forEach(function (root) {
+    var batch = parseInt(root.getAttribute('data-reveal-batch'), 10) || 10;
+    var items = root.querySelectorAll('[data-reveal-item]');
+    var trigger = root.querySelector('[data-reveal-trigger]');
+    if (!trigger || items.length <= batch) return;
+    var shown = batch;
+    items.forEach(function (item, index) {
+      if (index >= shown) item.classList.add('search-hidden');
+    });
+    trigger.hidden = false;
+    trigger.addEventListener('click', function () {
+      var next = Math.min(shown + batch, items.length);
+      for (var i = shown; i < next; i++) items[i].classList.remove('search-hidden');
+      shown = next;
+      if (shown >= items.length) trigger.hidden = true;
     });
   });
 })();

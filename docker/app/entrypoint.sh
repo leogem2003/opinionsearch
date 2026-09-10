@@ -1,8 +1,6 @@
 #!/bin/sh
 # Waits for the database, applies migrations, then either runs the given
-# command (e.g. `uv run pytest`, for the testing setup) or falls back to the
-# dev server -- so this same image/entrypoint serves both `docker compose up`
-# and `docker compose run --rm web uv run pytest`.
+# command or prepares models and starts the website with installed dependencies.
 set -eu
 
 : "${DB_HOST:=db}"
@@ -22,10 +20,10 @@ except OSError:
 done
 
 echo "==> Applying migrations"
-uv run python manage.py migrate --noinput
+uv run manage.py migrate --noinput
 
 echo "==> Creating admin user if needed"
-uv run python manage.py shell << 'DJANGO_EOF'
+uv run manage.py shell << 'DJANGO_EOF'
 from django.contrib.auth.models import User
 if not User.objects.filter(username='admin').exists():
     User.objects.create_superuser('admin', 'admin@example.com', 'admin')
@@ -38,5 +36,4 @@ if [ "$#" -gt 0 ]; then
     exec "$@"
 fi
 
-echo "==> Starting development server"
-exec uv run python manage.py runserver 0.0.0.0:8000
+uv run -m docker.app.serve

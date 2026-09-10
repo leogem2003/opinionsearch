@@ -6,4 +6,5 @@ app_name = "opinions"
 
 urlpatterns = [
     path("", views.search, name="search"),
+    path("browse/", views.browse, name="browse"),
 ]

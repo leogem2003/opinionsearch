@@ -13,7 +13,7 @@
     </div>
   {% else %}
     <div class="opinion-search">
-      <form role="search" aria-label="Search opinions" method="get" action="/topics/">
+      <form role="search" aria-label="Search opinions" method="get" action="/topics/" data-busy-label="Searching…">
         <label for="query">Search opinions</label>
         <div class="opinion-search-controls">
           <input id="query" type="search" name="q" value="{{ query }}" placeholder="A topic or statement, such as affordable housing">
@@ -21,8 +21,9 @@
         </div>
       </form>
       {% if query_error %}<p class="civic-error" role="alert">{{ query_error }}</p>{% endif %}
+      {% if page_error %}<p class="civic-error" role="alert">{{ page_error }}</p>{% endif %}
 
-      {% if query_error %}
+      {% if query_error or page_error %}
       {% elif results is not None %}
         {% if results %}
           {% include "opinions/_sentiment_breakdown.html" %}
@@ -43,6 +44,7 @@
                   <option value="{{ value }}" {% if value == sort %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
               </select>
+              <noscript><button class="civic-text-button" type="submit">Apply</button></noscript>
             </form>
           </header>
           <ul class="directory-discussions public-topic-list">

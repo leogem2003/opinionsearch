@@ -14,6 +14,7 @@ from django.core.cache import cache
 from django.db import DatabaseError, connections
 from django.test import Client
 from django.urls import reverse
+from django.utils.html import escape
 
 from opinions.models import Cluster, Contribution, Opinion, User
 from opinions.pipeline import index_contribution
@@ -60,12 +61,12 @@ def receipt_params(response):
 def test_submit_creates_and_redirects_to_a_url_carrying_the_receipt(embedding):
     client = Client()
     public_count = Opinion.objects.count()
-    text = "  Housing 🏡\nSchöne Wohnungen.  "
+    text = "\n  Housing 🏡\nSchöne Wohnungen.  \n"
     saved = submit(client, text)
     path, token = receipt_params(saved)
     assert len(token) == 43
     source = Contribution.objects.get()
-    assert source.text == text.strip()
+    assert source.text == text
     assert source.publication == "public"
     assert source.submission_key_hash == hashlib.sha256(KEY.encode()).hexdigest()
     assert path == f"/contributions/{source.id}/"
@@ -74,16 +75,17 @@ def test_submit_creates_and_redirects_to_a_url_carrying_the_receipt(embedding):
     assert page.status_code == 200
     assert page.context["contribution"] == source
     assert page.context["searchable"] is True
-    assert text.strip() in page.content.decode()
+    assert text in page.content.decode()
     assert token not in page.content.decode()
 
     assert Opinion.objects.count() == public_count + 1
     opinion = Opinion.objects.get(contribution=source)
+    assert opinion.text == text
     assert opinion.author is None
     assert not opinion.clusters.exists()
     assert opinion.sentiment == 4
     assert list(opinion.embedding) == VECTOR
-    embedding.assert_called_once_with(text.strip())
+    embedding.assert_called_once_with(text)
 
 
 @pytest.mark.django_db
@@ -128,6 +130,33 @@ def test_key_collision_with_different_text_starts_a_fresh_contribution(client):
     assert second_source.text == "A different issue."
 
 
+@pytest.mark.django_db
+def test_edited_failed_submission_reuses_its_source_and_effective_key(
+    client, embedding
+):
+    embedding.side_effect = RuntimeError("Model unavailable")
+    assert submit(client, text="Original draft").status_code == 503
+    text = "\n  Edited <draft>.  \n"
+    failed = submit(client, text=text)
+    key = failed.context["submission_key"]
+    assert failed.status_code == 503
+    assert key != KEY
+    assert f">\n{escape(text)}</textarea>" in failed.content.decode()
+    source = Contribution.objects.get(text=text)
+    assert b"Your original text is saved" in failed.content
+
+    assert submit(client, text=text, key=key).status_code == 503
+    # Replaying the preceding request must also recover the same source.
+    assert submit(client, text=text, key=KEY).status_code == 503
+    assert Contribution.objects.count() == 2
+
+    embedding.side_effect = None
+    saved = submit(client, text=text, key=key)
+    assert receipt_params(saved)[0] == f"/contributions/{source.id}/"
+    assert Opinion.objects.get(contribution=source).text == text
+    assert Contribution.objects.count() == 2
+
+
 @pytest.mark.django_db(transaction=True)
 def test_concurrent_retries_create_one_durable_contribution():
     text = "Same text"
@@ -149,7 +178,9 @@ def test_concurrent_retries_create_one_durable_contribution():
     assert len(targets) == 1
 
 
-@pytest.mark.parametrize("text", ["", " \n ", "x" * 2001, "bad\0text"])
+@pytest.mark.parametrize(
+    "text", ["", " \n ", "x" * 2001, " " + "x" * 2000, "bad\0text"]
+)
 @pytest.mark.django_db
 def test_invalid_text_is_rejected_without_storage(client, text):
     # Unlike the retired JSON endpoint, a plain HTML form can't submit a
@@ -347,6 +378,67 @@ def test_topics_browse_idle_shows_directory_without_embedding_a_query(
 
 
 @pytest.mark.django_db
+def test_search_failure_preserves_query_and_shows_a_readable_error(client, monkeypatch):
+    monkeypatch.setattr(
+        "opinions.search.embed_text",
+        Mock(side_effect=RuntimeError("Internal model details")),
+    )
+    response = client.get("/topics/", {"q": "Housing"})
+    assert response.status_code == 503
+    assert response.context["query"] == "Housing"
+    assert b"Search is unavailable" in response.content
+    assert b"Internal model details" not in response.content
+
+
+@pytest.mark.django_db
+def test_storage_failure_keeps_forms_and_topic_errors_readable(client, monkeypatch):
+    failure = Mock(side_effect=DatabaseError("Internal storage details"))
+    monkeypatch.setattr(Opinion.objects, "aggregate", failure)
+    monkeypatch.setattr(Contribution.objects, "get_or_create", failure)
+    home = client.get("/")
+    assert home.context["directory_error"]
+    assert b"No opinions yet" not in home.content
+    failed = submit(client, text="Keep my draft.")
+    assert failed.status_code == 503
+    assert failed.context["text"] == "Keep my draft."
+    for path in ("/topics/", "/topics/housing/"):
+        response = client.get(path)
+        assert response.status_code == 503
+        assert b"could not be loaded" in response.content
+        assert b"Internal storage details" not in response.content
+
+
+def test_startup_prepares_models_before_serving_and_stops_on_failure(monkeypatch):
+    from docker.app import serve
+
+    calls = []
+    monkeypatch.setattr(serve.django, "setup", Mock())
+    monkeypatch.setattr(
+        "opinions.embedding.embed_text",
+        lambda text: calls.append("embedding") or VECTOR,
+    )
+    scorer = Mock(side_effect=lambda text: calls.append("sentiment"))
+    monkeypatch.setattr("opinions.sentiment.score_text", scorer)
+    monkeypatch.setattr(
+        "opinions.topic_classification.classify_topics",
+        lambda text, embedding: calls.append("topics"),
+    )
+    server = Mock(side_effect=lambda *args, **kwargs: calls.append("serve"))
+    monkeypatch.setattr(serve, "call_command", server)
+    serve.main()
+    assert calls == ["embedding", "sentiment", "topics", "serve"]
+    server.assert_called_once_with("runserver", "0.0.0.0:8000", use_reloader=False)
+
+    server.reset_mock()
+    calls.clear()
+    scorer.side_effect = RuntimeError("Model unavailable")
+    with pytest.raises(RuntimeError, match="Model unavailable"):
+        serve.main()
+    assert calls == ["embedding"]
+    server.assert_not_called()
+
+
+@pytest.mark.django_db
 def test_opinion_rows_show_the_publishing_users_username_or_anonymous(client):
     author = User.objects.create(username="alex")
     authored = Opinion.objects.create(
@@ -404,12 +496,16 @@ def test_anonymous_input_keeps_categories_and_source_when_clusters_are_added(
 
     html = client.get("/search/", {"query": opinion.text})
     assert html.status_code == 200
-    row = html.context["results"][0]
-    assert row["author"] is None
-    assert row["topic"] == ("rent, tenants" if clustered else "unclustered")
-    assert row["topics"] == (
-        [{"layer": 0, "label": "rent, tenants"}] if clustered else []
-    )
+    if clustered:
+        row = html.context["results"][0]
+        assert row["author"] is None
+        assert row["text"] == opinion.text
+        assert html.context["clusters_found"][0]["label"] == "rent, tenants"
+    else:
+        # No discovered hierarchy yet -- nothing to match a cluster against.
+        assert html.context["results"] == []
+        assert html.context["no_matches"] is True
+
     result = client.get("/topics/", {"topic": "housing"}).context["results"][0]
     assert result["topics"] == [{"id": "housing", "title": "Housing"}]
     assert result["contribution_id"] == source.id
@@ -419,4 +515,144 @@ def test_anonymous_input_keeps_categories_and_source_when_clusters_are_added(
         client.get(f"/contributions/{source.id}/", {"receipt": token}).status_code
         == 200
     )
+    cache.clear()
+
+
+VECTOR2 = [0.0, 1.0] + [0.0] * 1022
+
+
+@pytest.mark.django_db
+def test_closest_clusters_orders_by_centroid_distance():
+    from opinions.views import _closest_clusters
+
+    near = Cluster.objects.create(
+        layer=0, evoc_id=0, label="near", centroid=VECTOR, size=1
+    )
+    Cluster.objects.create(layer=0, evoc_id=1, label="far", centroid=VECTOR2, size=1)
+
+    assert _closest_clusters(VECTOR, layer=0, n=1) == [near]
+    assert [c.label for c in _closest_clusters(VECTOR, layer=0, n=2)] == [
+        "near",
+        "far",
+    ]
+
+
+@pytest.mark.django_db
+def test_search_finds_opinions_via_the_closest_cluster(client, monkeypatch):
+    cache.clear()
+    monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
+    monkeypatch.setattr("opinions.search.score_text", Mock(return_value=4))
+    opinion = Opinion.objects.create(
+        text="Housing needs more supply.", embedding=VECTOR, sentiment=4
+    )
+    cluster = Cluster.objects.create(
+        layer=0, evoc_id=0, label="housing", centroid=VECTOR, size=1, exemplar=opinion
+    )
+    opinion.clusters.add(cluster)
+
+    response = client.get("/search/", {"query": "affordable housing", "n": 1})
+    assert response.status_code == 200
+    assert response.context["clusters_found"] == [{"label": "housing", "size": 1}]
+    assert [row["id"] for row in response.context["results"]] == [opinion.pk]
+    assert response.context["no_matches"] is False
+    assert response.context["weak_match"] is False
+    cache.clear()
+
+
+@pytest.mark.django_db
+def test_search_level_tabs_switch_which_layer_is_matched(client, monkeypatch):
+    cache.clear()
+    monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
+    monkeypatch.setattr("opinions.search.score_text", Mock(return_value=3))
+    fine_opinion = Opinion.objects.create(
+        text="A narrow topic opinion.", embedding=VECTOR, sentiment=3
+    )
+    broad_opinion = Opinion.objects.create(
+        text="A broad topic opinion.", embedding=VECTOR, sentiment=3
+    )
+    broad_cluster = Cluster.objects.create(
+        layer=1, evoc_id=0, label="broad", centroid=VECTOR, size=1
+    )
+    fine_cluster = Cluster.objects.create(
+        layer=0, evoc_id=0, label="fine", centroid=VECTOR, size=1, parent=broad_cluster
+    )
+    fine_opinion.clusters.add(fine_cluster)
+    broad_opinion.clusters.add(broad_cluster)
+
+    at_layer0 = client.get("/search/", {"query": "topic", "n": 1, "topic_level": 0})
+    assert [row["id"] for row in at_layer0.context["results"]] == [fine_opinion.pk]
+    assert at_layer0.context["max_topic_level"] == 1
+
+    at_layer1 = client.get("/search/", {"query": "topic", "n": 1, "topic_level": 1})
+    assert [row["id"] for row in at_layer1.context["results"]] == [broad_opinion.pk]
+    cache.clear()
+
+
+@pytest.mark.django_db
+def test_search_flags_a_weak_match_when_the_closest_cluster_is_far(client, monkeypatch):
+    cache.clear()
+    monkeypatch.setattr("opinions.search.embed_text", Mock(return_value=VECTOR))
+    monkeypatch.setattr("opinions.search.score_text", Mock(return_value=3))
+    opinion = Opinion.objects.create(
+        text="Unrelated opinion.", embedding=VECTOR2, sentiment=3
+    )
+    cluster = Cluster.objects.create(
+        layer=0, evoc_id=0, label="far", centroid=VECTOR2, size=1
+    )
+    opinion.clusters.add(cluster)
+
+    response = client.get("/search/", {"query": "something else entirely", "n": 1})
+    assert response.status_code == 200
+    assert response.context["no_matches"] is False
+    assert response.context["weak_match"] is True
+    cache.clear()
+
+
+@pytest.mark.django_db
+def test_browse_root_lists_only_parentless_clusters(client):
+    top = Cluster.objects.create(
+        layer=1, evoc_id=0, label="top", centroid=VECTOR, size=2
+    )
+    Cluster.objects.create(
+        layer=0, evoc_id=0, label="child", centroid=VECTOR, size=1, parent=top
+    )
+    # Never merged upward -- parent=None even though it isn't the top layer.
+    orphan = Cluster.objects.create(
+        layer=0, evoc_id=1, label="orphan", centroid=VECTOR2, size=1
+    )
+
+    response = client.get("/search/browse/")
+    assert response.status_code == 200
+    ids = {cluster.pk for cluster in response.context["options"]}
+    assert ids == {top.pk, orphan.pk}
+
+
+@pytest.mark.django_db
+def test_browse_shows_children_then_the_shared_results_at_a_leaf(client):
+    opinion = Opinion.objects.create(
+        text="A leaf opinion.", embedding=VECTOR, sentiment=3
+    )
+    top = Cluster.objects.create(
+        layer=1, evoc_id=0, label="top", centroid=VECTOR, size=1
+    )
+    leaf = Cluster.objects.create(
+        layer=0, evoc_id=0, label="leaf", centroid=VECTOR, size=1, parent=top
+    )
+    opinion.clusters.add(leaf)
+
+    at_top = client.get("/search/browse/", {"cluster": top.pk})
+    assert at_top.status_code == 200
+    assert list(at_top.context["options"]) == [leaf]
+    assert at_top.context["breadcrumbs"] == []
+
+    at_leaf = client.get("/search/browse/", {"cluster": leaf.pk})
+    assert at_leaf.status_code == 200
+    assert at_leaf.context["options"] is None
+    assert [row["id"] for row in at_leaf.context["results"]] == [opinion.pk]
+    assert [ancestor.pk for ancestor in at_leaf.context["breadcrumbs"]] == [top.pk]
+
+
+@pytest.mark.django_db
+def test_browse_unknown_cluster_404s(client):
+    assert client.get("/search/browse/", {"cluster": 999999}).status_code == 404
     cache.clear()

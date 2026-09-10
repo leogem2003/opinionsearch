@@ -1,6 +1,7 @@
 """Anonymous intake and URL-receipt-authenticated reads, as plain HTML forms."""
 
 import hashlib
+import logging
 import re
 import secrets
 import uuid
@@ -20,6 +21,8 @@ from .pipeline import (
 )
 from .topics import topic_summaries
 
+logger = logging.getLogger(__name__)
+
 SUBMISSION_KEY = re.compile(r"[A-Za-z0-9_-]{32,128}")
 # Matches secrets.token_urlsafe(32)'s output length exactly.
 RECEIPT = re.compile(r"[A-Za-z0-9_-]{43}")
@@ -34,10 +37,9 @@ TEASER_TOPIC_COUNT = 4
 
 
 def _issue_text_error(text):
-    stripped = text.strip()
-    if not stripped:
+    if not text.strip():
         return "Describe an issue before sending."
-    if len(stripped) > 2000 or "\0" in text:
+    if len(text) > 2000 or "\0" in text:
         return "Use 2,000 characters or fewer. Your text is still here."
     try:
         text.encode("utf-8")
@@ -57,6 +59,26 @@ def _teaser_topics():
     return visible[:TEASER_TOPIC_COUNT]
 
 
+def _render_issue_form(request, key, text, error="", status=200):
+    try:
+        topics, directory_error = _teaser_topics(), ""
+    except DatabaseError:
+        logger.exception("Topic preview unavailable")
+        topics, directory_error = [], "Topics could not be loaded. Please try again."
+    return render(
+        request,
+        "opinions/home.html",
+        {
+            "submission_key": key,
+            "text": text,
+            "error": error,
+            "topics": topics,
+            "directory_error": directory_error,
+        },
+        status=status,
+    )
+
+
 def _get_or_create_contribution(key, text):
     with transaction.atomic():
         contribution, _ = Contribution.objects.get_or_create(
@@ -68,12 +90,10 @@ def _get_or_create_contribution(key, text):
             },
         )
     if contribution.text == text and contribution.publication == "public":
-        return contribution
-    # The hidden submission key is generated fresh on every GET /, so this
-    # only happens if a visitor edited previously-failed text before
-    # resubmitting the same page. Start over with a new key rather than
-    # surfacing a conflict there is no useful way for them to resolve.
-    new_key = secrets.token_urlsafe(32)
+        return contribution, key
+    # Edited text is a new source. Derive its key from this form and draft so
+    # replaying the previous request also recovers it if the response was lost.
+    new_key = hashlib.sha256(f"{key}\0{text}".encode("utf-8")).hexdigest()
     with transaction.atomic():
         contribution, _ = Contribution.objects.get_or_create(
             submission_key_hash=hashlib.sha256(new_key.encode("ascii")).hexdigest(),
@@ -83,21 +103,13 @@ def _get_or_create_contribution(key, text):
                 "access_token": secrets.token_urlsafe(32),
             },
         )
-    return contribution
+    return contribution, new_key
 
 
 @require_http_methods(["GET", "POST"])
 def submit_issue(request):
     if request.method == "GET":
-        return render(
-            request,
-            "opinions/home.html",
-            {
-                "submission_key": secrets.token_urlsafe(32),
-                "text": "",
-                "topics": _teaser_topics(),
-            },
-        )
+        return _render_issue_form(request, secrets.token_urlsafe(32), "")
 
     text = request.POST.get("text", "")
     key = request.POST.get("submission_key", "")
@@ -106,21 +118,11 @@ def submit_issue(request):
 
     error = _issue_text_error(text)
     if error:
-        return render(
-            request,
-            "opinions/home.html",
-            {
-                "submission_key": key,
-                "text": text,
-                "error": error,
-                "topics": _teaser_topics(),
-            },
-            status=400,
-        )
+        return _render_issue_form(request, key, text, error, status=400)
 
-    text = text.strip()
+    contribution = None
     try:
-        contribution = _get_or_create_contribution(key, text)
+        contribution, key = _get_or_create_contribution(key, text)
         index_contribution(contribution)
     except (
         DatabaseError,
@@ -128,17 +130,13 @@ def submit_issue(request):
         SentimentUnavailable,
         TopicsUnavailable,
     ):
-        return render(
-            request,
-            "opinions/home.html",
-            {
-                "submission_key": key,
-                "text": text,
-                "error": RETRY_MESSAGE,
-                "topics": _teaser_topics(),
-            },
-            status=503,
+        logger.exception("Issue submission could not finish")
+        message = (
+            "Your original text is saved, but analysis could not finish. Send it again to retry."
+            if contribution is not None
+            else RETRY_MESSAGE
         )
+        return _render_issue_form(request, key, text, message, status=503)
 
     url = reverse("contribution-detail", args=[contribution.id])
     return HttpResponseRedirect(f"{url}?receipt={contribution.access_token}")

@@ -1,7 +1,9 @@
 """Predefined civic topic browsing/search pages. Browsing never runs a model."""
 
+import logging
 import math
 
+from django.db import DatabaseError
 from django.db.models import Count, Max, Q
 from django.http import Http404
 from django.shortcuts import render
@@ -11,6 +13,8 @@ from .models import Opinion
 from .search import DEFAULT_MAX_DISTANCE, search_opinions
 from .sentiment import sentiment_label
 from .topic_classification import TOPIC_IDS, TOPICS
+
+logger = logging.getLogger(__name__)
 
 SEARCH_LIMIT = 50
 
@@ -177,7 +181,12 @@ def topics_browse(request):
         return render(request, "opinions/topics_browse.html", context, status=400)
 
     if not query and not topic_param:
-        total, summaries = topic_summaries()
+        try:
+            total, summaries = topic_summaries()
+        except DatabaseError:
+            logger.exception("Topic directory unavailable")
+            context["page_error"] = "Topics could not be loaded. Please try again."
+            return render(request, "opinions/topics_browse.html", context, status=503)
         directory = [
             topic
             for topic in summaries
@@ -189,7 +198,12 @@ def topics_browse(request):
         )
         return render(request, "opinions/topics_browse.html", context)
 
-    rows = _search_results(query, topic_param)
+    try:
+        rows = _search_results(query, topic_param)
+    except Exception:
+        logger.exception("Opinion search unavailable")
+        context["page_error"] = "Search is unavailable right now. Please try again."
+        return render(request, "opinions/topics_browse.html", context, status=503)
     primary_groups, secondary_groups = _bucket_by_sentiment(rows)
     context.update(
         {
@@ -206,9 +220,18 @@ def topics_browse(request):
 def topic_detail(request, topic_id):
     if topic_id not in TOPIC_IDS | {"unassigned"}:
         raise Http404("Unknown topic.")
-    _, summaries = topic_summaries()
-    topic = next(item for item in summaries if item["id"] == topic_id)
-    rows = _search_results("", topic_id)
+    try:
+        _, summaries = topic_summaries()
+        topic = next(item for item in summaries if item["id"] == topic_id)
+        rows = _search_results("", topic_id)
+    except DatabaseError:
+        logger.exception("Topic unavailable")
+        return render(
+            request,
+            "opinions/topics_browse.html",
+            {"page_error": "This topic could not be loaded. Please try again."},
+            status=503,
+        )
     primary_groups, secondary_groups = _bucket_by_sentiment(rows)
     return render(
         request,

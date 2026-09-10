@@ -268,6 +268,35 @@ input:focus, select:focus { border-color: var(--brand-teal); }
 .legal-section p { margin-top: 14px; color: var(--civic-muted); font-size: 0.96rem; line-height: 1.8; overflow-wrap: anywhere; }
 .legal-back { margin-top: 36px; }
 
+/* Cluster search + topic browse pages */
+.cluster-search-form { margin-block: 22px 28px; }
+.cluster-search-sliders { display: flex; flex-wrap: wrap; gap: 20px 32px; margin-top: 18px; }
+.cluster-search-sliders label { display: flex; flex-direction: column; gap: 6px; font-size: .8125rem; color: var(--civic-muted); min-width: 220px; }
+.cluster-search-sliders input[type="range"] { width: 100%; }
+.topic-level-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.topic-level-tabs a { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 14px; border: 1px solid var(--civic-line); border-radius: var(--control-radius); color: var(--civic-muted); font-size: .8125rem; font-weight: 600; text-decoration: none; background: #fff; }
+.topic-level-tabs a:hover { background: #eaf0f3; }
+.topic-level-tabs a.is-current { border-color: var(--civic-accent); background: var(--civic-accent); color: #fff; }
+.cluster-search-matches { margin-bottom: 20px; color: var(--civic-muted); font-size: .875rem; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cluster-chip { display: inline-flex; padding: 5px 10px; border-radius: 5px; background: #e4eff1; color: #185765; font-size: .8125rem; font-weight: 600; }
+#sentiment-chart-wrapper { position: relative; height: 260px; margin-top: 10px; }
+#scatter-chart-wrapper { position: relative; margin-top: 10px; cursor: grab; }
+#scatter-chart-wrapper:active { cursor: grabbing; }
+/* chartjs-plugin-zoom needs this so the browser doesn't intercept
+   drag/pinch gestures over the canvas before the plugin sees them. */
+#scatter-chart { touch-action: none; }
+.atlas-chart-panel + .atlas-chart-panel { margin-top: 20px; }
+.opinion-detail-callout { margin-top: 16px; padding: 14px 16px; border-radius: 6px; background: #ffffff10; color: #edf5ef; }
+.opinion-detail-callout p { margin-top: 4px; font-size: .875rem; }
+.opinion-detail-callout p:first-child { margin-top: 0; font-size: 1rem; }
+.cluster-browse-list { list-style: none; border: 1px solid var(--civic-line); border-radius: 8px; background: #fff; padding: 0 22px; margin-top: 22px; }
+.cluster-browse-list li { border-bottom: 1px solid var(--civic-line); }
+.cluster-browse-list li:last-child { border-bottom: 0; }
+.cluster-browse-list a { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding-block: 20px; min-height: 72px; color: #244e5e; text-decoration: none; }
+.cluster-browse-list a:hover h3 { text-decoration: underline; text-underline-offset: 4px; }
+.cluster-browse-list h3 { font-size: 1.0625rem; font-weight: 500; line-height: 1.55; overflow-wrap: anywhere; }
+.cluster-browse-list p { margin-top: 6px; color: #536d7d; font-size: .8125rem; }
+
 @media (max-width: 900px) {
   .civic-container { width: calc(100% - 3rem); }
   .civic-intro { gap: 2rem; }
