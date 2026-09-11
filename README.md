@@ -1,6 +1,10 @@
-# Opinionsearch
+# HiveMind
+> [!WARNING]  
+> A big part of this project has been **vibecoded**. We therefore do NOT recommend to use this in production and further do not provide a setup for production.
 
 ## Run the website
+> [!WARNING]  
+> With the current docker setup, the default managemant user will be `admin`, passwd:`admin` and runs the **development server**. The admin user has permissions to change the database!
 
 Install and start Docker with Compose support (Docker Desktop includes both).
 From the repository root, run:
@@ -61,7 +65,7 @@ opinions/tests/
 ├── test_frontend.py     # submission, identity cookies, editing and search contracts
 ├── test_topics.py       # topic decisions, browsing and backfill
 ├── test_admin.py        # admin field protections
-├── integration/
+├── integration/`
 │   ├── test_search.py   # retrieval and submission with real models
 │   ├── test_clustering.py
 │   └── conftest.py      # expensive sample-corpus setup, only for this group
